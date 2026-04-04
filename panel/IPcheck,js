@@ -35,3 +35,4 @@ function getFlagEmoji(countryCode) {
       .map(char =>  127397 + char.charCodeAt());
     return String.fromCodePoint(...codePoints);
 }
+
