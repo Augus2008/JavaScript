@@ -273,6 +273,16 @@ function timestampName() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
+async function checkpointIfPossible(db: Database) {
+  // Scripting keeps extra SQLite reader connections. FULL waits for them to
+  // finish and can throw SQLITE_LOCKED (error 6) during startup.
+  try {
+    await db.execute("PRAGMA wal_checkpoint(PASSIVE)")
+  } catch (error) {
+    console.warn("WAL checkpoint skipped", error)
+  }
+}
+
 function backupDatabaseFiles(databasePath: string, backupsDirectory: string) {
   if (!FileManager.existsSync(databasePath)) return null
   const directory = Path.join(backupsDirectory, `migration-${timestampName()}`)
@@ -293,6 +303,16 @@ function backupDatabaseFiles(databasePath: string, backupsDirectory: string) {
   return directory
 }
 
+async function backupIfPossible(db: Database, databasePath: string, backupsDirectory: string) {
+  await checkpointIfPossible(db)
+  try {
+    return backupDatabaseFiles(databasePath, backupsDirectory)
+  } catch (error) {
+    console.warn("Database backup skipped", error)
+    return null
+  }
+}
+
 async function runMigrations(
   db: Database,
   databasePath: string,
@@ -307,7 +327,7 @@ async function runMigrations(
   }
 
   const backupDirectory = !hadMigrationTable && legacyMetaExists
-    ? (await db.execute("PRAGMA wal_checkpoint(FULL)"), backupDatabaseFiles(databasePath, backupsDirectory))
+    ? await backupIfPossible(db, databasePath, backupsDirectory)
     : null
 
   await ensureMigrationTable(db)
