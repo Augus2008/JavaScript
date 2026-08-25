@@ -1,5 +1,5 @@
 import { Path } from "scripting"
-import type { ClipboardItem, Snippet, SnippetCategory, Workspace } from "../models/types"
+import type { ClipboardItem, LexiconEntry, Snippet, SnippetCategory, Workspace } from "../models/types"
 import { runMigrations, validateSchema } from "../migrations"
 
 const rootDirectory = Path.join(FileManager.documentsDirectory, "NativeToolbox")
@@ -222,6 +222,53 @@ export async function toggleSnippetFavorite(id: string) {
 
 export async function deleteSnippet(id: string) {
   await db.execute("DELETE FROM snippets WHERE id = ?", [id])
+}
+
+export async function countLexiconEntries() {
+  const rows = await db.fetchAll<{ total: number }>("SELECT COUNT(*) AS total FROM lexicon_entries")
+  return rows[0]?.total ?? 0
+}
+
+export async function listLexiconEntries(query = "") {
+  const filters: string[] = []
+  const args: Array<string | number> = []
+  if (query.trim()) {
+    filters.push("(text LIKE ? OR IFNULL(code, '') LIKE ? OR IFNULL(category, '') LIKE ? OR IFNULL(note, '') LIKE ?)")
+    const q = `%${query.trim()}%`
+    args.push(q, q, q, q)
+  }
+  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
+  return db.fetchAll<LexiconEntry>(`
+    SELECT * FROM lexicon_entries
+    ${where}
+    ORDER BY updated_at DESC
+    LIMIT 1000
+  `, args)
+}
+
+export async function upsertLexiconEntry(entry: LexiconEntry) {
+  await db.execute(`
+    INSERT INTO lexicon_entries(
+      id,text,code,weight,category,note,source,workspace_id,external_key,created_at,updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET
+      text=excluded.text,
+      code=excluded.code,
+      weight=excluded.weight,
+      category=excluded.category,
+      note=excluded.note,
+      source=excluded.source,
+      workspace_id=excluded.workspace_id,
+      external_key=excluded.external_key,
+      updated_at=excluded.updated_at
+  `, [
+    entry.id, entry.text, entry.code, entry.weight, entry.category, entry.note,
+    entry.source, entry.workspace_id, entry.external_key, entry.created_at, entry.updated_at,
+  ])
+}
+
+export async function deleteLexiconEntry(id: string) {
+  await db.execute("DELETE FROM lexicon_entries WHERE id = ?", [id])
 }
 
 export { db }

@@ -46,6 +46,20 @@ export type Snippet = {
   updated_at: number
 }
 
+export type LexiconEntry = {
+  id: string
+  text: string
+  code: string | null
+  weight: number
+  category: string | null
+  note: string | null
+  source: "manual" | "import" | "workspace"
+  workspace_id: string | null
+  external_key: string | null
+  created_at: number
+  updated_at: number
+}
+
 export type WorkspaceStatus = "connected" | "unavailable" | "changed" | "readonly"
 
 export type Workspace = {

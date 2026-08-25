@@ -80,6 +80,20 @@ type Snippet = {
   updated_at: number
 }
 
+type LexiconEntry = {
+  id: string
+  text: string
+  code: string | null
+  weight: number
+  category: string | null
+  note: string | null
+  source: "manual" | "import" | "workspace"
+  workspace_id: string | null
+  external_key: string | null
+  created_at: number
+  updated_at: number
+}
+
 type WorkspaceStatus = "connected" | "unavailable" | "changed" | "readonly"
 
 type Workspace = {
@@ -641,6 +655,53 @@ async function toggleSnippetFavorite(id: string) {
 
 async function deleteSnippet(id: string) {
   await db.execute("DELETE FROM snippets WHERE id = ?", [id])
+}
+
+async function countLexiconEntries() {
+  const rows = await db.fetchAll<{ total: number }>("SELECT COUNT(*) AS total FROM lexicon_entries")
+  return rows[0]?.total ?? 0
+}
+
+async function listLexiconEntries(query = "") {
+  const filters: string[] = []
+  const args: Array<string | number> = []
+  if (query.trim()) {
+    filters.push("(text LIKE ? OR IFNULL(code, '') LIKE ? OR IFNULL(category, '') LIKE ? OR IFNULL(note, '') LIKE ?)")
+    const q = `%${query.trim()}%`
+    args.push(q, q, q, q)
+  }
+  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
+  return db.fetchAll<LexiconEntry>(`
+    SELECT * FROM lexicon_entries
+    ${where}
+    ORDER BY updated_at DESC
+    LIMIT 1000
+  `, args)
+}
+
+async function upsertLexiconEntry(entry: LexiconEntry) {
+  await db.execute(`
+    INSERT INTO lexicon_entries(
+      id,text,code,weight,category,note,source,workspace_id,external_key,created_at,updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET
+      text=excluded.text,
+      code=excluded.code,
+      weight=excluded.weight,
+      category=excluded.category,
+      note=excluded.note,
+      source=excluded.source,
+      workspace_id=excluded.workspace_id,
+      external_key=excluded.external_key,
+      updated_at=excluded.updated_at
+  `, [
+    entry.id, entry.text, entry.code, entry.weight, entry.category, entry.note,
+    entry.source, entry.workspace_id, entry.external_key, entry.created_at, entry.updated_at,
+  ])
+}
+
+async function deleteLexiconEntry(id: string) {
+  await db.execute("DELETE FROM lexicon_entries WHERE id = ?", [id])
 }
 // ---- services/pasteboard.ts ----
 const DEFAULT_SETTINGS: AppSettings = {
@@ -1474,6 +1535,27 @@ async function refreshWorkspace(workspace: Workspace) {
   return { ...workspace, display_path: root, version, status: "connected" as const, last_checked_at: Date.now() }
 }
 // ---- features/lexicon/LexiconScreen.tsx ----
+function emptyEntry(): LexiconEntry {
+  const now = Date.now()
+  return {
+    id: UUID.string(),
+    text: "",
+    code: "",
+    weight: 10,
+    category: "",
+    note: "",
+    source: "manual",
+    workspace_id: null,
+    external_key: null,
+    created_at: now,
+    updated_at: now,
+  }
+}
+
+function preview(value: string | null) {
+  return (value ?? "").replace(/\s+/g, " ").trim()
+}
+
 function WorkspaceRow({ workspace, reload }: { workspace: Workspace; reload: () => void }) {
   const connected = workspace.status === "connected"
   return (
@@ -1509,13 +1591,151 @@ function WorkspaceRow({ workspace, reload }: { workspace: Workspace; reload: () 
   )
 }
 
+function LexiconEditor({
+  entry,
+  onClose,
+}: {
+  entry: LexiconEntry
+  onClose: (saved: boolean) => void
+}) {
+  const [text, setText] = useState(entry.text)
+  const [code, setCode] = useState(entry.code ?? "")
+  const [weight, setWeight] = useState(entry.weight)
+  const [category, setCategory] = useState(entry.category ?? "")
+  const [note, setNote] = useState(entry.note ?? "")
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    const nextText = text.trim()
+    if (!nextText) {
+      await Dialog.alert({ title: "请填写词语", message: "内部词条至少需要词语本身。" })
+      return
+    }
+    setSaving(true)
+    try {
+      await upsertLexiconEntry({
+        ...entry,
+        text: nextText,
+        code: code.trim() || null,
+        weight,
+        category: category.trim() || null,
+        note: note.trim() || null,
+        source: "manual",
+        updated_at: Date.now(),
+      })
+      onClose(true)
+    } catch (error) {
+      await Dialog.alert({ title: "保存失败", message: String(error) })
+      setSaving(false)
+    }
+  }
+
+  return (
+    <NavigationStack>
+      <List
+        navigationTitle={entry.text ? "编辑词条" : "新建词条"}
+        navigationBarTitleDisplayMode="inline"
+        listStyle="insetGrouped"
+        toolbar={{
+          cancellationAction: <Button title="取消" action={() => onClose(false)} />,
+          confirmationAction: <Button title={saving ? "保存中…" : "保存"} disabled={saving} action={save} />,
+        }}
+      >
+        <Section footer={<Text>这些词条先存在工具箱自己的数据库里，不会写入万象目录。</Text>}>
+          <TextField title="词语" value={text} onChanged={setText} prompt="例如：毛豆" />
+          <TextField title="编码" value={code} onChanged={setCode} prompt="可选，例如 maodou" />
+          <Stepper
+            title={`权重 ${weight}`}
+            onIncrement={() => setWeight(Math.min(100, weight + 1))}
+            onDecrement={() => setWeight(Math.max(1, weight - 1))}
+          />
+          <TextField title="分类" value={category} onChanged={setCategory} prompt="可选" />
+        </Section>
+        <Section header={<Text>备注</Text>}>
+          <TextField
+            title="备注"
+            value={note}
+            onChanged={setNote}
+            axis="vertical"
+            lineLimit={{ max: 6 }}
+            prompt="可选说明"
+          />
+        </Section>
+      </List>
+    </NavigationStack>
+  )
+}
+
+function LexiconRow({
+  entry,
+  onEdit,
+  reload,
+}: {
+  entry: LexiconEntry
+  onEdit: () => void
+  reload: () => void
+}) {
+  const copy = async () => {
+    await Pasteboard.setString(entry.text)
+  }
+
+  const subtitle = [entry.code, entry.category, `权重 ${entry.weight}`]
+    .filter(value => value != null && String(value).trim() !== "")
+    .join(" · ")
+
+  return (
+    <HStack spacing={12}
+      onTapGesture={onEdit}
+      trailingSwipeActions={{
+        actions: [
+          <Button
+            title="删除"
+            systemImage="trash"
+            role="destructive"
+            action={async () => {
+              const confirmed = await Dialog.confirm({
+                title: "删除词条",
+                message: `确定删除「${entry.text}」？`,
+                confirmLabel: "删除",
+                cancelLabel: "取消",
+              })
+              if (!confirmed) return
+              await deleteLexiconEntry(entry.id)
+              reload()
+            }}
+          />,
+        ],
+      }}
+    >
+      <Image systemName="character.book.closed" foregroundColor="systemTeal" />
+      <VStack alignment="leading" spacing={4}>
+        <Text font="headline" lineLimit={1}>{entry.text}</Text>
+        {subtitle !== "" && <Text font="subheadline" foregroundColor="secondary" lineLimit={1}>{subtitle}</Text>}
+        {preview(entry.note) !== "" && (
+          <Text font="caption" foregroundColor="secondary" lineLimit={2}>{preview(entry.note)}</Text>
+        )}
+      </VStack>
+      <Spacer />
+      <Button title="复制" systemImage="doc.on.doc" buttonStyle="borderless" action={copy} />
+    </HStack>
+  )
+}
+
 function LexiconScreen() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [entries, setEntries] = useState<LexiconEntry[]>([])
+  const [total, setTotal] = useState(0)
+  const [query, setQuery] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editor, setEditor] = useState<LexiconEntry | null>(null)
 
   const reload = () => {
-    listWorkspaces().then(async rows => {
+    Promise.all([
+      listWorkspaces(),
+      listLexiconEntries(query),
+      countLexiconEntries(),
+    ]).then(async ([rows, nextEntries, nextTotal]) => {
       const refreshed: Workspace[] = []
       for (const row of rows) {
         const value = await refreshWorkspace(row)
@@ -1523,10 +1743,13 @@ function LexiconScreen() {
         refreshed.push(value)
       }
       setWorkspaces(refreshed)
+      setEntries(nextEntries)
+      setTotal(nextTotal)
+      setError(null)
     }).catch(e => setError(String(e))).finally(() => setLoading(false))
   }
 
-  useEffect(() => { reload() }, [])
+  useEffect(() => { reload() }, [query])
 
   const connect = async () => {
     setError(null)
@@ -1539,14 +1762,8 @@ function LexiconScreen() {
   }
 
   const overlay = error != null
-    ? <ContentUnavailableView title="无法连接词库" systemImage="exclamationmark.triangle" description={error} />
-    : (!loading && workspaces.length === 0
-      ? <ContentUnavailableView
-          label={<Text>还没有词库工作区</Text>}
-          description={<Text>工具箱可以独立维护词条；也可以授权一个万象目录。</Text>}
-          actions={[<Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />]}
-        />
-      : undefined)
+    ? <ContentUnavailableView title="无法读取词库" systemImage="exclamationmark.triangle" description={error} />
+    : undefined
 
   return (
     <NavigationStack>
@@ -1554,17 +1771,50 @@ function LexiconScreen() {
         navigationTitle="词库中心"
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
+        searchable={{ value: query, onChanged: setQuery, prompt: "搜索词语、编码或备注" }}
         overlay={overlay}
+        toolbar={{
+          primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
+        }}
+        sheet={{
+          isPresented: editor != null,
+          onChanged: presented => { if (!presented) setEditor(null) },
+          content: editor == null ? undefined : (
+            <LexiconEditor
+              key={editor.id}
+              entry={editor}
+              onClose={saved => {
+                setEditor(null)
+                if (saved) reload()
+              }}
+            />
+          ),
+        }}
       >
-        <Section>
+        <Section header={<Text>工作区</Text>} footer={<Text>外部目录目前只做连接和识别，不会写入万象词库。</Text>}>
           <Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />
+          {workspaces.map(workspace => (
+            <WorkspaceRow key={workspace.id} workspace={workspace} reload={reload} />
+          ))}
         </Section>
-        {workspaces.length > 0 && <Section header={<Text>工作区</Text>}>
-          {workspaces.map(workspace => <WorkspaceRow key={workspace.id} workspace={workspace} reload={reload} />)}
-        </Section>}
-        <Section header={<Text>内部词库</Text>} footer={<Text>词条编辑与万象差异提交将在下一开发切片启用。</Text>}>
-          <Label title="0 个词条" systemImage="text.book.closed" />
-          <Label title="0 项待提交" systemImage="arrow.triangle.2.circlepath" />
+        <Section
+          header={<Text>内部词库</Text>}
+          footer={<Text>{loading ? "正在读取…" : `共 ${total} 个词条。这些数据只存在工具箱本地。`}</Text>}
+        >
+          {entries.length === 0
+            ? <ContentUnavailableView
+                label={<Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>}
+                description={<Text>先在工具箱里维护词条。以后提交到万象时会走差异预览和备份。</Text>}
+                actions={[<Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />]}
+              />
+            : entries.map(entry => (
+              <LexiconRow
+                key={entry.id}
+                entry={entry}
+                onEdit={() => setEditor(entry)}
+                reload={reload}
+              />
+            ))}
         </Section>
       </List>
     </NavigationStack>
