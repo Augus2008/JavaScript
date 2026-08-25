@@ -1,0 +1,75 @@
+# NativeToolbox
+
+基于 [Scripting](https://scriptingapp.github.io/) 的独立 iOS 原生文本效率工具箱。
+
+## 当前版本
+
+`v0.1.2 MVP`
+
+当前已经可以运行：
+
+- 五个原生 Tab；
+- SQLite v1 数据结构；
+- 文本/URL 剪贴板采集、搜索、筛选、收藏、删除、复制；
+- 前台监听和返回前台补采；
+- 基础文本处理；
+- 设置持久化；
+- 外部万象/通用目录 bookmark 连接与识别。
+
+常用语 CRUD、图片采集、内部词条 CRUD 和万象词库实际写入仍在开发中。
+
+## Scripting 远程安装入口
+
+正式运行入口是仓库根目录下的单文件：
+
+```text
+NativeToolbox/index.tsx
+```
+
+Raw URL：
+
+```text
+https://raw.githubusercontent.com/Augus2008/JavaScript/main/NativeToolbox/index.tsx
+```
+
+在 Scripting 的“安装远程脚本”中使用该 URL。以后仓库中的 `index.tsx` 更新后，可以直接通过 Scripting 的远程脚本更新功能同步。
+
+## 目录结构
+
+```text
+NativeToolbox/
+├─ index.tsx          # 单文件正式入口，供 Scripting 远程安装
+├─ README.md
+├─ src/               # 模块化开发源码
+│  ├─ index.tsx
+│  ├─ app/
+│  ├─ features/
+│  ├─ models/
+│  └─ services/
+└─ docs/
+   ├─ product-spec-v0.1.md
+   └─ DEVELOPMENT-STATUS.md
+```
+
+## 运行要求
+
+- 使用新版 Scripting；
+- iOS 设置 → Scripting → 从其他 App 粘贴 → 允许；
+- 首次运行时允许剪贴板权限；
+- 使用外部词库时授权文件目录。
+
+## 数据安全
+
+- 工具箱数据存放在自己的 Documents/SQLite 中；
+- 万象只是可选的外部工作区；
+- 当前版本不会写入外部词库；
+- 后续词库提交将采用哈希冲突检测、差异预览、备份和回滚；
+- 不修改 `*.userdb`、`.gram` 和官方 `dicts/`。
+
+## 开发约定
+
+- `src/` 是模块化源码；
+- 发布前把 `src/index.tsx` 打包为根目录 `index.tsx`；
+- 根目录 `index.tsx` 必须保持零本地模块依赖；
+- `FileManager`、`Pasteboard`、`Storage`、`Crypto`、`Data`、`UUID`、`DocumentPicker`、`SQLite` 使用 Scripting 全局命名空间，不从 `scripting` 包导入；
+- `Path` 和 UI 组件从 `scripting` 包导入。
