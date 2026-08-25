@@ -4,12 +4,13 @@
 
 ## 当前版本
 
-`v0.1.2 MVP`
+`v0.1.3 MVP`
 
 当前已经可以运行：
 
 - 五个原生 Tab；
-- SQLite v1 数据结构；
+- 正式 SQLite 迁移系统（`001-initial`）；
+- 旧数据库兼容升级、迁移前备份、结构校验；
 - 文本/URL 剪贴板采集、搜索、筛选、收藏、删除、复制；
 - 前台监听和返回前台补采；
 - 基础文本处理；
@@ -53,6 +54,7 @@ NativeToolbox/
 │  ├─ index.tsx
 │  ├─ app/
 │  ├─ features/
+│  ├─ migrations/     # SQLite 正式迁移
 │  ├─ models/
 │  └─ services/
 └─ docs/

@@ -1,6 +1,6 @@
 import { Path } from "scripting"
 import type { Workspace } from "../models/types"
-import { upsertWorkspace } from "./database"
+import { findWorkspaceByBookmark, upsertWorkspace } from "./database"
 
 function hashText(text: string) {
   const data = Data.fromRawString(text)
@@ -29,8 +29,9 @@ export async function chooseAndConnectWorkspace() {
     : null
   const schemaText = isWanxiang ? await FileManager.readAsString(schemaPath) : ""
 
+  const existing = await findWorkspaceByBookmark(result.bookmarkName)
   const workspace: Workspace = {
-    id: UUID.string(),
+    id: existing?.id ?? UUID.string(),
     type: isWanxiang ? "wanxiang" : "generic",
     name: isWanxiang ? "万象拼音" : basename(root),
     bookmark_name: result.bookmarkName,

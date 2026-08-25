@@ -1,5 +1,6 @@
 import { Path } from "scripting"
 import type { ClipboardItem, Workspace } from "../models/types"
+import { runMigrations, validateSchema } from "../migrations"
 
 const rootDirectory = Path.join(FileManager.documentsDirectory, "NativeToolbox")
 const databasePath = Path.join(rootDirectory, "toolbox.sqlite")
@@ -40,117 +41,9 @@ const db = SQLite.open(databasePath, {
 
 export async function migrateDatabase() {
   await ensureAppDirectories()
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS schema_meta (
-      version INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS clipboard_items (
-      id TEXT PRIMARY KEY,
-      kind TEXT NOT NULL CHECK(kind IN ('text', 'url', 'image')),
-      content TEXT,
-      asset_path TEXT,
-      fingerprint TEXT NOT NULL,
-      title TEXT,
-      note TEXT,
-      is_favorite INTEGER NOT NULL DEFAULT 0,
-      is_pinned INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      last_copied_at INTEGER,
-      expires_at INTEGER,
-      byte_size INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_clipboard_fingerprint ON clipboard_items(fingerprint);
-    CREATE INDEX IF NOT EXISTS idx_clipboard_updated ON clipboard_items(updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_clipboard_favorite ON clipboard_items(is_favorite, updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS snippet_categories (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      symbol TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS snippets (
-      id TEXT PRIMARY KEY,
-      category_id TEXT,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      is_template INTEGER NOT NULL DEFAULT 0,
-      is_favorite INTEGER NOT NULL DEFAULT 0,
-      is_pinned INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY(category_id) REFERENCES snippet_categories(id) ON DELETE SET NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS text_pipelines (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      steps_json TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS lexicon_entries (
-      id TEXT PRIMARY KEY,
-      text TEXT NOT NULL,
-      code TEXT,
-      weight INTEGER NOT NULL DEFAULT 10,
-      category TEXT,
-      note TEXT,
-      source TEXT NOT NULL DEFAULT 'manual',
-      workspace_id TEXT,
-      external_key TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS workspaces (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      bookmark_name TEXT NOT NULL,
-      display_path TEXT NOT NULL,
-      version TEXT,
-      last_seen_hash TEXT,
-      last_checked_at INTEGER,
-      status TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS workspace_changes (
-      id TEXT PRIMARY KEY,
-      workspace_id TEXT NOT NULL,
-      target_file TEXT NOT NULL,
-      operation TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      base_hash TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
-    );
-  `)
-
-  const rows = await db.fetchAll<{ version: number }>("SELECT version FROM schema_meta LIMIT 1")
-  if (rows.length === 0) {
-    await db.execute("INSERT INTO schema_meta(version) VALUES (?)", [1])
-    await seedCategories()
-  }
-}
-
-async function seedCategories() {
-  const rows: Array<[string, string, string, number]> = [
-    ["work", "工作", "briefcase.fill", 0],
-    ["life", "生活", "house.fill", 1],
-    ["address", "地址", "mappin.and.ellipse", 2],
-    ["code", "代码", "chevron.left.forwardslash.chevron.right", 3],
-  ]
-  await db.transaction(rows.map(row => ({
-    sql: "INSERT OR IGNORE INTO snippet_categories(id,name,symbol,sort_order) VALUES (?,?,?,?)",
-    args: row,
-  })))
+  const report = await runMigrations(db, databasePath, backupsDirectory)
+  await validateSchema(db)
+  return report
 }
 
 export async function listClipboardItems(query = "", kind: "all" | "text" | "url" | "image" | "favorite" = "all") {
@@ -231,6 +124,14 @@ export async function cleanupClipboard(maxItems: number, now: number) {
 
 export async function listWorkspaces() {
   return db.fetchAll<Workspace>("SELECT * FROM workspaces ORDER BY name")
+}
+
+export async function findWorkspaceByBookmark(bookmarkName: string) {
+  const rows = await db.fetchAll<Workspace>(
+    "SELECT * FROM workspaces WHERE bookmark_name = ? ORDER BY last_checked_at DESC LIMIT 1",
+    [bookmarkName],
+  )
+  return rows[0] ?? null
 }
 
 export async function upsertWorkspace(workspace: Workspace) {
