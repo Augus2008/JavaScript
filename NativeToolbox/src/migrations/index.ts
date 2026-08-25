@@ -18,6 +18,19 @@ export type MigrationReport = {
 
 const migrations: Migration[] = [initialMigration]
 
+async function tableExists(db: Database, tableName: string) {
+  const rows = await db.fetchAll<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+    [tableName],
+  )
+  return rows.length > 0
+}
+
+async function columnNames(db: Database, tableName: string) {
+  const rows = await db.fetchAll<{ name: string }>(`PRAGMA table_info("${tableName}")`)
+  return rows.map(row => row.name)
+}
+
 function checksumFor(migration: Migration) {
   const data = Data.fromRawString(JSON.stringify({
     version: migration.version,
@@ -75,8 +88,8 @@ export async function runMigrations(
   databasePath: string,
   backupsDirectory: string,
 ): Promise<MigrationReport> {
-  const hadMigrationTable = await db.tableExists("schema_migrations")
-  const legacyMetaExists = await db.tableExists("schema_meta")
+  const hadMigrationTable = await tableExists(db, "schema_migrations")
+  const legacyMetaExists = await tableExists(db, "schema_meta")
   let legacyVersion = 0
   if (legacyMetaExists) {
     const rows = await db.fetchAll<{ version: number }>("SELECT version FROM schema_meta LIMIT 1")
@@ -144,12 +157,11 @@ const requiredColumns: Record<string, string[]> = {
 export async function validateSchema(db: Database) {
   const errors: string[] = []
   for (const table of requiredTables) {
-    if (!(await db.tableExists(table))) errors.push(`缺少数据表：${table}`)
+    if (!(await tableExists(db, table))) errors.push(`缺少数据表：${table}`)
   }
   for (const [table, expected] of Object.entries(requiredColumns)) {
-    if (!(await db.tableExists(table))) continue
-    const columns = await db.columnsIn(table)
-    const names = new Set(columns.map(column => column.name))
+    if (!(await tableExists(db, table))) continue
+    const names = new Set(await columnNames(db, table))
     for (const name of expected) {
       if (!names.has(name)) errors.push(`数据表 ${table} 缺少字段 ${name}`)
     }

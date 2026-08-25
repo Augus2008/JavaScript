@@ -23,7 +23,13 @@
 
 ## Slice 2：正式 SQLite 初始迁移
 
-状态：代码完成，本地迁移回归通过，已准备远程发布 `v0.1.3`。
+状态：已发布 `v0.1.3`，并热修复为 `v0.1.4`。
+
+### 运行时热修复（v0.1.4）
+
+- [x] 不再调用 `db.tableExists` / `db.columnsIn`（可选 schema 参数会被桥接成字符串 `"undefined"`）
+- [x] 改用 `sqlite_master` 与 `PRAGMA table_info` 做表/列检测
+- [x] 重新打包单文件入口并远程发布
 
 ### 完成
 
