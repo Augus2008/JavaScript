@@ -1,5 +1,5 @@
 import { Path } from "scripting"
-import type { ClipboardItem, Workspace } from "../models/types"
+import type { ClipboardItem, Snippet, SnippetCategory, Workspace } from "../models/types"
 import { runMigrations, validateSchema } from "../migrations"
 
 const rootDirectory = Path.join(FileManager.documentsDirectory, "NativeToolbox")
@@ -157,6 +157,71 @@ export async function upsertWorkspace(workspace: Workspace) {
 
 export async function removeWorkspace(id: string) {
   await db.execute("DELETE FROM workspaces WHERE id = ?", [id])
+}
+
+export async function listSnippetCategories() {
+  return db.fetchAll<SnippetCategory>(
+    "SELECT * FROM snippet_categories ORDER BY sort_order, name"
+  )
+}
+
+export async function listSnippets(
+  query = "",
+  options: { favoriteOnly?: boolean; categoryId?: string | null } = {},
+) {
+  const filters: string[] = []
+  const args: Array<string | number> = []
+  if (query.trim()) {
+    filters.push("(title LIKE ? OR body LIKE ?)")
+    const q = `%${query.trim()}%`
+    args.push(q, q)
+  }
+  if (options.favoriteOnly) filters.push("is_favorite = 1")
+  if (options.categoryId) {
+    filters.push("category_id = ?")
+    args.push(options.categoryId)
+  }
+  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
+  return db.fetchAll<Snippet>(`
+    SELECT * FROM snippets
+    ${where}
+    ORDER BY is_pinned DESC, is_favorite DESC, sort_order, updated_at DESC
+    LIMIT 1000
+  `, args)
+}
+
+export async function upsertSnippet(snippet: Snippet) {
+  await db.execute(`
+    INSERT INTO snippets(
+      id,category_id,title,body,is_template,is_favorite,is_pinned,sort_order,created_at,updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET
+      category_id=excluded.category_id,
+      title=excluded.title,
+      body=excluded.body,
+      is_template=excluded.is_template,
+      is_favorite=excluded.is_favorite,
+      is_pinned=excluded.is_pinned,
+      sort_order=excluded.sort_order,
+      updated_at=excluded.updated_at
+  `, [
+    snippet.id, snippet.category_id, snippet.title, snippet.body,
+    snippet.is_template, snippet.is_favorite, snippet.is_pinned,
+    snippet.sort_order, snippet.created_at, snippet.updated_at,
+  ])
+}
+
+export async function toggleSnippetFavorite(id: string) {
+  await db.execute(`
+    UPDATE snippets
+    SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END,
+        updated_at = ?
+    WHERE id = ?
+  `, [Date.now(), id])
+}
+
+export async function deleteSnippet(id: string) {
+  await db.execute("DELETE FROM snippets WHERE id = ?", [id])
 }
 
 export { db }

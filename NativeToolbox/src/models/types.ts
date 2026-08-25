@@ -26,6 +26,26 @@ export type AppSettings = {
   retentionDays: number
 }
 
+export type SnippetCategory = {
+  id: string
+  name: string
+  symbol: string
+  sort_order: number
+}
+
+export type Snippet = {
+  id: string
+  category_id: string | null
+  title: string
+  body: string
+  is_template: number
+  is_favorite: number
+  is_pinned: number
+  sort_order: number
+  created_at: number
+  updated_at: number
+}
+
 export type WorkspaceStatus = "connected" | "unavailable" | "changed" | "readonly"
 
 export type Workspace = {
