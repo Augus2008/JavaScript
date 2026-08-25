@@ -1,0 +1,31 @@
+{
+  "name": "NativeToolbox",
+  "localizedNames": {
+    "zh": "原生工具箱",
+    "en": "NativeToolbox"
+  },
+  "description": "Independent native iOS toolbox for clipboard, snippets, text processing and lexicon management.",
+  "localizedDescriptions": {
+    "zh": "独立的 iOS 原生工具箱，用于剪贴板、常用语、文本处理与词库维护。",
+    "en": "Independent native iOS toolbox for clipboard, snippets, text processing and lexicon management."
+  },
+  "version": "0.1.2",
+  "entry": "index.tsx",
+  "icon": "shippingbox.fill",
+  "iconImage": null,
+  "color": "rgba(88, 86, 214, 1)",
+  "runInApp": false,
+  "intentInputTypes": [],
+  "permissions": null,
+  "author": {
+    "name": "Augus2008",
+    "email": null,
+    "homepage": "https://github.com/Augus2008"
+  },
+  "contributors": [],
+  "remoteResource": {
+    "url": "https://github.com/Augus2008/JavaScript/tree/main/NativeToolbox",
+    "autoUpdateInterval": null,
+    "hash": ""
+  }
+}

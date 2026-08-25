@@ -20,25 +20,34 @@
 
 ## Scripting 远程安装入口
 
-正式运行入口是仓库根目录下的单文件：
+Scripting 的“导入远程脚本”要求输入 **GitHub 仓库或脚本目录 URL**，并通过目录中的 `script.json` 识别项目；不能使用返回 `text/plain` 的 Raw 单文件 URL。
+
+安装地址：
+
+```text
+https://github.com/Augus2008/JavaScript/tree/main/NativeToolbox
+```
+
+项目元数据：
+
+```text
+NativeToolbox/script.json
+```
+
+正式运行入口仍是根目录的单文件：
 
 ```text
 NativeToolbox/index.tsx
 ```
 
-Raw URL：
-
-```text
-https://raw.githubusercontent.com/Augus2008/JavaScript/main/NativeToolbox/index.tsx
-```
-
-在 Scripting 的“安装远程脚本”中使用该 URL。以后仓库中的 `index.tsx` 更新后，可以直接通过 Scripting 的远程脚本更新功能同步。
+安装后，Scripting 会依据 `script.json` 中的 `remoteResource.url` 跟踪该目录；以后仓库更新后可直接使用远程脚本更新功能同步。
 
 ## 目录结构
 
 ```text
 NativeToolbox/
-├─ index.tsx          # 单文件正式入口，供 Scripting 远程安装
+├─ index.tsx          # 单文件正式运行入口
+├─ script.json        # Scripting 安装、展示和远程更新元数据
 ├─ README.md
 ├─ src/               # 模块化开发源码
 │  ├─ index.tsx
