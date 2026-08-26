@@ -6,7 +6,6 @@ import {
   Form,
   HStack,
   Image,
-  Label,
   List,
   Navigation,
   NavigationStack,
@@ -28,34 +27,6 @@ import {
 } from "scripting"
 
 // ---- models/types.ts ----
-type ClipboardKind = "text" | "url" | "image"
-type DuplicatePolicy = "ignore" | "moveToTop" | "keepCopy"
-
-type ClipboardItem = {
-  id: string
-  kind: ClipboardKind
-  content: string | null
-  asset_path: string | null
-  fingerprint: string
-  title: string | null
-  note: string | null
-  is_favorite: number
-  is_pinned: number
-  created_at: number
-  updated_at: number
-  last_copied_at: number | null
-  expires_at: number | null
-  byte_size: number
-}
-
-type AppSettings = {
-  captureText: boolean
-  captureImages: boolean
-  duplicatePolicy: DuplicatePolicy
-  maxItems: number
-  retentionDays: number
-}
-
 type SnippetCategory = {
   id: string
   name: string
@@ -475,82 +446,6 @@ async function migrateDatabase() {
   return report
 }
 
-async function listClipboardItems(query = "", kind: "all" | "text" | "url" | "image" | "favorite" = "all") {
-  const filters: string[] = []
-  const args: Array<string | number> = []
-  if (query.trim()) {
-    filters.push("(content LIKE ? OR title LIKE ? OR note LIKE ?)")
-    const q = `%${query.trim()}%`
-    args.push(q, q, q)
-  }
-  if (kind === "favorite") filters.push("is_favorite = 1")
-  else if (kind !== "all") {
-    filters.push("kind = ?")
-    args.push(kind)
-  }
-  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
-  return db.fetchAll<ClipboardItem>(`
-    SELECT * FROM clipboard_items
-    ${where}
-    ORDER BY is_pinned DESC, updated_at DESC
-    LIMIT 1000
-  `, args)
-}
-
-async function findClipboardByFingerprint(fingerprint: string) {
-  return db.fetchAll<ClipboardItem>(
-    "SELECT * FROM clipboard_items WHERE fingerprint = ? ORDER BY updated_at DESC LIMIT 1",
-    [fingerprint]
-  ).then(rows => rows[0] ?? null)
-}
-
-async function insertClipboardItem(item: ClipboardItem) {
-  await db.execute(`
-    INSERT INTO clipboard_items(
-      id,kind,content,asset_path,fingerprint,title,note,is_favorite,is_pinned,
-      created_at,updated_at,last_copied_at,expires_at,byte_size
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `, [
-    item.id, item.kind, item.content, item.asset_path, item.fingerprint,
-    item.title, item.note, item.is_favorite, item.is_pinned, item.created_at,
-    item.updated_at, item.last_copied_at, item.expires_at, item.byte_size,
-  ])
-}
-
-async function touchClipboardItem(id: string, now: number) {
-  await db.execute("UPDATE clipboard_items SET updated_at = ? WHERE id = ?", [now, id])
-}
-
-async function toggleClipboardFavorite(id: string) {
-  await db.execute(`
-    UPDATE clipboard_items
-    SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END,
-        updated_at = ?
-    WHERE id = ?
-  `, [Date.now(), id])
-}
-
-async function deleteClipboardItem(id: string) {
-  await db.execute("DELETE FROM clipboard_items WHERE id = ?", [id])
-}
-
-async function markClipboardCopied(id: string) {
-  await db.execute("UPDATE clipboard_items SET last_copied_at = ? WHERE id = ?", [Date.now(), id])
-}
-
-async function cleanupClipboard(maxItems: number, now: number) {
-  await db.execute("DELETE FROM clipboard_items WHERE is_favorite = 0 AND expires_at IS NOT NULL AND expires_at < ?", [now])
-  await db.execute(`
-    DELETE FROM clipboard_items
-    WHERE is_favorite = 0 AND id IN (
-      SELECT id FROM clipboard_items
-      WHERE is_favorite = 0
-      ORDER BY updated_at DESC
-      LIMIT -1 OFFSET ?
-    )
-  `, [maxItems])
-}
-
 async function listWorkspaces() {
   return db.fetchAll<Workspace>("SELECT * FROM workspaces ORDER BY name")
 }
@@ -752,280 +647,6 @@ async function importExternalPhrases(items: ExternalPhraseImport[]): Promise<Phr
     imported += 1
   }
   return { imported, skipped }
-}
-// ---- services/pasteboard.ts ----
-const DEFAULT_SETTINGS: AppSettings = {
-  captureText: true,
-  captureImages: false,
-  duplicatePolicy: "moveToTop",
-  maxItems: 500,
-  retentionDays: 30,
-}
-
-const SETTINGS_KEY = "native-toolbox.settings.v1"
-const CHANGE_COUNT_KEY = "native-toolbox.pasteboard.changeCount"
-
-function loadSettings(): AppSettings {
-  return {
-    ...DEFAULT_SETTINGS,
-    ...(Storage.get<Partial<AppSettings>>(SETTINGS_KEY) ?? {}),
-  }
-}
-
-function saveSettings(settings: AppSettings) {
-  return Storage.set(SETTINGS_KEY, settings)
-}
-
-function normalizeText(text: string) {
-  return text.replace(/\r\n?/g, "\n").replace(/[ \t]+$/gm, "").trimEnd()
-}
-
-function asData(value: string) {
-  const data = Data.fromRawString(value)
-  if (data == null) throw new Error("无法将文本编码为 UTF-8")
-  return data
-}
-
-function fingerprint(kind: ClipboardKind, content: string) {
-  return Crypto.sha256(asData(`${kind}\u0000${content}`)).toHexString()
-}
-
-function looksLikeURL(text: string) {
-  return /^https?:\/\/\S+$/i.test(text.trim())
-}
-
-async function captureTextValue(raw: string, settings: AppSettings) {
-  const content = normalizeText(raw)
-  if (!content) return false
-  const kind: ClipboardKind = looksLikeURL(content) ? "url" : "text"
-  const hash = fingerprint(kind, content)
-  const existing = await findClipboardByFingerprint(hash)
-  const now = Date.now()
-
-  if (existing && settings.duplicatePolicy === "ignore") return false
-  if (existing && settings.duplicatePolicy === "moveToTop") {
-    await touchClipboardItem(existing.id, now)
-    return true
-  }
-
-  const item: ClipboardItem = {
-    id: UUID.string(),
-    kind,
-    content,
-    asset_path: null,
-    fingerprint: hash,
-    title: null,
-    note: null,
-    is_favorite: 0,
-    is_pinned: 0,
-    created_at: now,
-    updated_at: now,
-    last_copied_at: null,
-    expires_at: settings.retentionDays > 0
-      ? now + settings.retentionDays * 24 * 60 * 60 * 1000
-      : null,
-    byte_size: asData(content).size,
-  }
-  await insertClipboardItem(item)
-  await cleanupClipboard(settings.maxItems, now)
-  return true
-}
-
-async function captureCurrentPasteboard(settings = loadSettings()) {
-  let changed = false
-  if (settings.captureText) {
-    const values = await Pasteboard.getStrings()
-    for (const value of values ?? []) {
-      changed = (await captureTextValue(value, settings)) || changed
-    }
-  }
-
-  // 图片写盘在第二个开发切片实现；开关保留但不会把图片误存进 Storage。
-  const count = await Pasteboard.changeCount
-  Storage.set(CHANGE_COUNT_KEY, count)
-  return changed
-}
-
-async function captureIfChanged(settings = loadSettings()) {
-  const current = await Pasteboard.changeCount
-  const previous = Storage.get<number>(CHANGE_COUNT_KEY)
-  if (previous === current) return false
-  return captureCurrentPasteboard(settings)
-}
-
-function installPasteboardListener(onCaptured: () => void) {
-  Pasteboard.onChanged = () => {
-    captureCurrentPasteboard()
-      .then((changed: boolean) => changed && onCaptured())
-      .catch((error: unknown) => console.error("Pasteboard capture failed", error))
-  }
-  return () => {
-    Pasteboard.onChanged = null
-  }
-}
-// ---- features/clipboard/ClipboardScreen.tsx ----
-type Filter = "all" | "text" | "url" | "favorite"
-
-function relativeTime(timestamp: number) {
-  const delta = Math.max(0, Date.now() - timestamp)
-  const minute = 60_000
-  const hour = 60 * minute
-  const day = 24 * hour
-  if (delta < minute) return "刚刚"
-  if (delta < hour) return `${Math.floor(delta / minute)} 分钟前`
-  if (delta < day) return `${Math.floor(delta / hour)} 小时前`
-  return `${Math.floor(delta / day)} 天前`
-}
-
-function ClipboardRow({ item, reload }: { item: ClipboardItem; reload: () => void }) {
-  const icon = item.kind === "url" ? "link" : "doc.text"
-  const copy = async () => {
-    if (item.content != null) {
-      await Pasteboard.setString(item.content)
-      await markClipboardCopied(item.id)
-      reload()
-    }
-  }
-
-  return (
-    <HStack spacing={12}
-      onTapGesture={copy}
-      leadingSwipeActions={{
-        allowsFullSwipe: false,
-        actions: [
-          <Button
-            title={item.is_favorite ? "取消收藏" : "收藏"}
-            systemImage={item.is_favorite ? "star.slash" : "star"}
-            tint="systemOrange"
-            action={async () => {
-              await toggleClipboardFavorite(item.id)
-              reload()
-            }}
-          />,
-        ],
-      }}
-      trailingSwipeActions={{
-        actions: [
-          <Button
-            title="删除"
-            systemImage="trash"
-            role="destructive"
-            action={async () => {
-              await deleteClipboardItem(item.id)
-              reload()
-            }}
-          />,
-        ],
-      }}
-    >
-      <Image systemName={icon} foregroundColor="secondary" />
-      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <Text font="body" lineLimit={3}>{item.content ?? ""}</Text>
-        <Text font="caption" foregroundColor="secondary">
-          {item.kind === "url" ? "链接" : "文本"} · {relativeTime(item.updated_at)}
-          {item.is_favorite === 1 ? " · 已收藏" : ""}
-        </Text>
-      </VStack>
-    </HStack>
-  )
-}
-
-function ClipboardScreen() {
-  const [items, setItems] = useState<ClipboardItem[]>([])
-  const [query, setQuery] = useState("")
-  const [filter, setFilter] = useState<Filter>("all")
-  const [loading, setLoading] = useState(true)
-  const [capturing, setCapturing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const reload = () => {
-    listClipboardItems(query, filter)
-      .then(setItems)
-      .catch(e => setError(String(e)))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => {
-    reload()
-  }, [query, filter])
-
-  useEffect(() => {
-    const remove = installPasteboardListener(reload)
-    return remove
-  }, [])
-
-  const capture = async () => {
-    if (capturing) return
-    setCapturing(true)
-    setError(null)
-    try {
-      const changed = await captureCurrentPasteboard(loadSettings())
-      reload()
-      if (!changed) {
-        await Dialog.alert({
-          title: "没有新内容",
-          message: "系统剪贴板是空的，或这条已经在列表里。先复制一段文字再点采集。",
-        })
-      }
-    } catch (e) {
-      await Dialog.alert({ title: "采集失败", message: String(e) })
-      setError(String(e))
-    } finally {
-      setCapturing(false)
-    }
-  }
-
-  const overlay = error != null
-    ? <ContentUnavailableView title="无法读取剪贴板" systemImage="exclamationmark.triangle" description={error} />
-    : (!loading && items.length === 0
-      ? <ContentUnavailableView
-          label={<Text>暂无剪贴板内容</Text>}
-          description={<Text>复制一段文字，或点击“立即采集”。</Text>}
-          actions={[<Button title="立即采集" systemImage="arrow.clockwise" action={capture} />]}
-        />
-      : undefined)
-
-  return (
-    <NavigationStack>
-      <List
-        navigationTitle="剪贴板"
-        navigationBarTitleDisplayMode="large"
-        listStyle="insetGrouped"
-        searchable={{ value: query, onChanged: setQuery, prompt: "搜索" }}
-        overlay={overlay}
-        toolbar={{
-          primaryAction: (
-            <Button
-              title={capturing ? "采集中" : "采集"}
-              systemImage="arrow.clockwise"
-              disabled={capturing}
-              action={capture}
-            />
-          ),
-        }}
-      >
-        <Section
-          header={<Text>筛选</Text>}
-          footer={items.length > 0 ? <Text>点按复制，左滑收藏，右滑删除。</Text> : undefined}
-        >
-          <Picker
-            title="类型"
-            pickerStyle="segmented"
-            value={filter}
-            onChanged={value => setFilter(value as Filter)}
-          >
-            <Text tag="all">全部</Text>
-            <Text tag="text">文本</Text>
-            <Text tag="url">链接</Text>
-            <Text tag="favorite">收藏</Text>
-          </Picker>
-        </Section>
-        {items.length > 0 && <Section>
-          {items.map(item => <ClipboardRow key={item.id} item={item} reload={reload} />)}
-        </Section>}
-      </List>
-    </NavigationStack>
-  )
 }
 // ---- features/snippets/templates.ts ----
 const KNOWN_TEMPLATE_KEYS = ["date", "time", "datetime", "clipboard"] as const
@@ -2413,14 +2034,6 @@ function LexiconScreen() {
 }
 // ---- features/settings/SettingsScreen.tsx ----
 function SettingsScreen() {
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
-
-  const update = (patch: Partial<AppSettings>) => {
-    const next = { ...settings, ...patch }
-    setSettings(next)
-    saveSettings(next)
-  }
-
   return (
     <NavigationStack>
       <Form
@@ -2428,34 +2041,45 @@ function SettingsScreen() {
         navigationBarTitleDisplayMode="large"
         formStyle="grouped"
       >
-        <Section header={<Text>剪贴板</Text>} footer={<Text>脚本在前台时监听；回到前台会补采。点列表即可复制。</Text>}>
-          <Toggle title="采集文本和链接" value={settings.captureText} onChanged={value => update({ captureText: value })} />
-          <Picker
-            title="重复内容"
-            value={settings.duplicatePolicy}
-            onChanged={value => update({ duplicatePolicy: value as DuplicatePolicy })}
-          >
-            <Text tag="ignore">忽略</Text>
-            <Text tag="moveToTop">更新到顶部</Text>
-            <Text tag="keepCopy">保留副本</Text>
-          </Picker>
-          <Stepper
-            title={`最多保留 ${settings.maxItems} 条`}
-            onIncrement={() => update({ maxItems: Math.min(2000, settings.maxItems + 100) })}
-            onDecrement={() => update({ maxItems: Math.max(100, settings.maxItems - 100) })}
-          />
-          <Stepper
-            title={settings.retentionDays === 0 ? "永久保留非收藏" : `保留 ${settings.retentionDays} 天`}
-            onIncrement={() => update({ retentionDays: Math.min(365, settings.retentionDays + 5) })}
-            onDecrement={() => update({ retentionDays: Math.max(0, settings.retentionDays - 5) })}
-          />
-        </Section>
-
-        <Section header={<Text>词库</Text>} footer={<Text>连接目录、预览差异和提交都在「词库」页完成。不会修改 userdb、gram 或官方 dicts。</Text>}>
+        <Section
+          header={<Text>词库安全</Text>}
+          footer={<Text>连接目录、预览差异、导入和提交都在「词库」页完成。</Text>}
+        >
           <HStack>
             <Text>写入方式</Text>
             <Spacer />
             <Text foregroundColor="secondary">预览后确认</Text>
+          </HStack>
+          <HStack>
+            <Text>冲突保护</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">文件哈希校验</Text>
+          </HStack>
+          <HStack>
+            <Text>提交备份</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">ToolboxBackups</Text>
+          </HStack>
+        </Section>
+
+        <Section
+          header={<Text>保护范围</Text>}
+          footer={<Text>工具箱只维护内部词库和万象 custom_phrase.txt。</Text>}
+        >
+          <HStack>
+            <Text>userdb / gram</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">不修改</Text>
+          </HStack>
+          <HStack>
+            <Text>官方 dicts</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">不修改</Text>
+          </HStack>
+          <HStack>
+            <Text>重新部署</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">手动完成</Text>
           </HStack>
         </Section>
 
@@ -2463,10 +2087,10 @@ function SettingsScreen() {
           <HStack>
             <Text>版本</Text>
             <Spacer />
-            <Text foregroundColor="secondary">0.2.3</Text>
+            <Text foregroundColor="secondary">0.4.0</Text>
           </HStack>
           <HStack>
-            <Text>数据</Text>
+            <Text>内部数据</Text>
             <Spacer />
             <Text foregroundColor="secondary">本机 SQLite</Text>
           </HStack>
@@ -2476,16 +2100,13 @@ function SettingsScreen() {
   )
 }
 // ---- app/App.tsx ----
-type TabID = "clipboard" | "snippets" | "lexicon" | "settings"
+type TabID = "snippets" | "lexicon" | "settings"
 
 function App() {
-  const selection = useObservable<TabID>("clipboard")
+  const selection = useObservable<TabID>("lexicon")
 
   return (
     <TabView selection={selection}>
-      <Tab title="剪贴板" systemImage="clipboard.fill" value="clipboard">
-        <ClipboardScreen />
-      </Tab>
       <Tab title="常用语" systemImage="text.bubble.fill" value="snippets">
         <SnippetsScreen />
       </Tab>
@@ -2512,17 +2133,8 @@ async function presentFatalError(error: unknown) {
 }
 
 async function run() {
-  let removeResumeListener: (() => void) | null = null
   try {
     await migrateDatabase()
-    await captureIfChanged(loadSettings())
-
-    removeResumeListener = Script.onResume(() => {
-      captureIfChanged(loadSettings()).catch((error: unknown) => {
-        console.error("Resume capture failed", error)
-      })
-    })
-
     await Navigation.present({
       element: <App />,
     })
@@ -2530,7 +2142,6 @@ async function run() {
     console.error("NativeToolbox startup failed", error)
     await presentFatalError(error)
   } finally {
-    removeResumeListener?.()
     Script.exit()
   }
 }

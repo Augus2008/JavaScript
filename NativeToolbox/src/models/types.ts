@@ -1,31 +1,3 @@
-export type ClipboardKind = "text" | "url" | "image"
-export type DuplicatePolicy = "ignore" | "moveToTop" | "keepCopy"
-
-export type ClipboardItem = {
-  id: string
-  kind: ClipboardKind
-  content: string | null
-  asset_path: string | null
-  fingerprint: string
-  title: string | null
-  note: string | null
-  is_favorite: number
-  is_pinned: number
-  created_at: number
-  updated_at: number
-  last_copied_at: number | null
-  expires_at: number | null
-  byte_size: number
-}
-
-export type AppSettings = {
-  captureText: boolean
-  captureImages: boolean
-  duplicatePolicy: DuplicatePolicy
-  maxItems: number
-  retentionDays: number
-}
-
 export type SnippetCategory = {
   id: string
   name: string

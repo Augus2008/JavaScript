@@ -1,5 +1,5 @@
 import { Path } from "scripting"
-import type { ClipboardItem, LexiconEntry, Snippet, SnippetCategory, Workspace } from "../models/types"
+import type { LexiconEntry, Snippet, SnippetCategory, Workspace } from "../models/types"
 import { runMigrations, validateSchema } from "../migrations"
 
 const rootDirectory = Path.join(FileManager.documentsDirectory, "NativeToolbox")
@@ -44,82 +44,6 @@ export async function migrateDatabase() {
   const report = await runMigrations(db, databasePath, backupsDirectory)
   await validateSchema(db)
   return report
-}
-
-export async function listClipboardItems(query = "", kind: "all" | "text" | "url" | "image" | "favorite" = "all") {
-  const filters: string[] = []
-  const args: Array<string | number> = []
-  if (query.trim()) {
-    filters.push("(content LIKE ? OR title LIKE ? OR note LIKE ?)")
-    const q = `%${query.trim()}%`
-    args.push(q, q, q)
-  }
-  if (kind === "favorite") filters.push("is_favorite = 1")
-  else if (kind !== "all") {
-    filters.push("kind = ?")
-    args.push(kind)
-  }
-  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
-  return db.fetchAll<ClipboardItem>(`
-    SELECT * FROM clipboard_items
-    ${where}
-    ORDER BY is_pinned DESC, updated_at DESC
-    LIMIT 1000
-  `, args)
-}
-
-export async function findClipboardByFingerprint(fingerprint: string) {
-  return db.fetchAll<ClipboardItem>(
-    "SELECT * FROM clipboard_items WHERE fingerprint = ? ORDER BY updated_at DESC LIMIT 1",
-    [fingerprint]
-  ).then(rows => rows[0] ?? null)
-}
-
-export async function insertClipboardItem(item: ClipboardItem) {
-  await db.execute(`
-    INSERT INTO clipboard_items(
-      id,kind,content,asset_path,fingerprint,title,note,is_favorite,is_pinned,
-      created_at,updated_at,last_copied_at,expires_at,byte_size
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `, [
-    item.id, item.kind, item.content, item.asset_path, item.fingerprint,
-    item.title, item.note, item.is_favorite, item.is_pinned, item.created_at,
-    item.updated_at, item.last_copied_at, item.expires_at, item.byte_size,
-  ])
-}
-
-export async function touchClipboardItem(id: string, now: number) {
-  await db.execute("UPDATE clipboard_items SET updated_at = ? WHERE id = ?", [now, id])
-}
-
-export async function toggleClipboardFavorite(id: string) {
-  await db.execute(`
-    UPDATE clipboard_items
-    SET is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END,
-        updated_at = ?
-    WHERE id = ?
-  `, [Date.now(), id])
-}
-
-export async function deleteClipboardItem(id: string) {
-  await db.execute("DELETE FROM clipboard_items WHERE id = ?", [id])
-}
-
-export async function markClipboardCopied(id: string) {
-  await db.execute("UPDATE clipboard_items SET last_copied_at = ? WHERE id = ?", [Date.now(), id])
-}
-
-export async function cleanupClipboard(maxItems: number, now: number) {
-  await db.execute("DELETE FROM clipboard_items WHERE is_favorite = 0 AND expires_at IS NOT NULL AND expires_at < ?", [now])
-  await db.execute(`
-    DELETE FROM clipboard_items
-    WHERE is_favorite = 0 AND id IN (
-      SELECT id FROM clipboard_items
-      WHERE is_favorite = 0
-      ORDER BY updated_at DESC
-      LIMIT -1 OFFSET ?
-    )
-  `, [maxItems])
 }
 
 export async function listWorkspaces() {

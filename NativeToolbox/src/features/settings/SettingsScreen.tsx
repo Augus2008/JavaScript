@@ -1,28 +1,13 @@
 import {
   Form,
   HStack,
-  Label,
   NavigationStack,
-  Picker,
   Section,
   Spacer,
-  Stepper,
   Text,
-  Toggle,
-  useState,
 } from "scripting"
-import type { AppSettings, DuplicatePolicy } from "../../models/types"
-import { loadSettings, saveSettings } from "../../services/pasteboard"
 
 export function SettingsScreen() {
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
-
-  const update = (patch: Partial<AppSettings>) => {
-    const next = { ...settings, ...patch }
-    setSettings(next)
-    saveSettings(next)
-  }
-
   return (
     <NavigationStack>
       <Form
@@ -30,34 +15,45 @@ export function SettingsScreen() {
         navigationBarTitleDisplayMode="large"
         formStyle="grouped"
       >
-        <Section header={<Text>剪贴板</Text>} footer={<Text>脚本在前台时监听；回到前台会补采。点列表即可复制。</Text>}>
-          <Toggle title="采集文本和链接" value={settings.captureText} onChanged={value => update({ captureText: value })} />
-          <Picker
-            title="重复内容"
-            value={settings.duplicatePolicy}
-            onChanged={value => update({ duplicatePolicy: value as DuplicatePolicy })}
-          >
-            <Text tag="ignore">忽略</Text>
-            <Text tag="moveToTop">更新到顶部</Text>
-            <Text tag="keepCopy">保留副本</Text>
-          </Picker>
-          <Stepper
-            title={`最多保留 ${settings.maxItems} 条`}
-            onIncrement={() => update({ maxItems: Math.min(2000, settings.maxItems + 100) })}
-            onDecrement={() => update({ maxItems: Math.max(100, settings.maxItems - 100) })}
-          />
-          <Stepper
-            title={settings.retentionDays === 0 ? "永久保留非收藏" : `保留 ${settings.retentionDays} 天`}
-            onIncrement={() => update({ retentionDays: Math.min(365, settings.retentionDays + 5) })}
-            onDecrement={() => update({ retentionDays: Math.max(0, settings.retentionDays - 5) })}
-          />
-        </Section>
-
-        <Section header={<Text>词库</Text>} footer={<Text>连接目录、预览差异和提交都在「词库」页完成。不会修改 userdb、gram 或官方 dicts。</Text>}>
+        <Section
+          header={<Text>词库安全</Text>}
+          footer={<Text>连接目录、预览差异、导入和提交都在「词库」页完成。</Text>}
+        >
           <HStack>
             <Text>写入方式</Text>
             <Spacer />
             <Text foregroundColor="secondary">预览后确认</Text>
+          </HStack>
+          <HStack>
+            <Text>冲突保护</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">文件哈希校验</Text>
+          </HStack>
+          <HStack>
+            <Text>提交备份</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">ToolboxBackups</Text>
+          </HStack>
+        </Section>
+
+        <Section
+          header={<Text>保护范围</Text>}
+          footer={<Text>工具箱只维护内部词库和万象 custom_phrase.txt。</Text>}
+        >
+          <HStack>
+            <Text>userdb / gram</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">不修改</Text>
+          </HStack>
+          <HStack>
+            <Text>官方 dicts</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">不修改</Text>
+          </HStack>
+          <HStack>
+            <Text>重新部署</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">手动完成</Text>
           </HStack>
         </Section>
 
@@ -65,10 +61,10 @@ export function SettingsScreen() {
           <HStack>
             <Text>版本</Text>
             <Spacer />
-            <Text foregroundColor="secondary">0.2.3</Text>
+            <Text foregroundColor="secondary">0.4.0</Text>
           </HStack>
           <HStack>
-            <Text>数据</Text>
+            <Text>内部数据</Text>
             <Spacer />
             <Text foregroundColor="secondary">本机 SQLite</Text>
           </HStack>

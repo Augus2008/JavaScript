@@ -1,19 +1,15 @@
 import { Tab, TabView, useObservable } from "scripting"
-import { ClipboardScreen } from "../features/clipboard/ClipboardScreen"
 import { SnippetsScreen } from "../features/snippets/SnippetsScreen"
 import { LexiconScreen } from "../features/lexicon/LexiconScreen"
 import { SettingsScreen } from "../features/settings/SettingsScreen"
 
-type TabID = "clipboard" | "snippets" | "lexicon" | "settings"
+type TabID = "snippets" | "lexicon" | "settings"
 
 export function App() {
-  const selection = useObservable<TabID>("clipboard")
+  const selection = useObservable<TabID>("lexicon")
 
   return (
     <TabView selection={selection}>
-      <Tab title="剪贴板" systemImage="clipboard.fill" value="clipboard">
-        <ClipboardScreen />
-      </Tab>
       <Tab title="常用语" systemImage="text.bubble.fill" value="snippets">
         <SnippetsScreen />
       </Tab>
