@@ -13,7 +13,6 @@ import {
   Path,
   Picker,
   Script,
-  ScrollView,
   Section,
   Spacer,
   Stepper,
@@ -1476,6 +1475,19 @@ function applyTextOperation(input: string, operation: TextOperation) {
   }
 }
 // ---- features/textlab/TextLabScreen.tsx ----
+const TOOLS: Array<{
+  id: TextOperation
+  title: string
+  detail: string
+}> = [
+  { id: "trim", title: "清理首尾空白", detail: "去掉全文开头和结尾的空格、空行" },
+  { id: "blankLines", title: "合并多余空行", detail: "连续多个空行压成一个" },
+  { id: "removeEmpty", title: "删除空行", detail: "去掉所有空白行" },
+  { id: "dedupe", title: "行去重", detail: "重复行只留第一次出现的" },
+  { id: "sort", title: "按行排序", detail: "按中文顺序排列每一行" },
+  { id: "json", title: "格式化 JSON", detail: "把 JSON 整理成缩进文本" },
+]
+
 function TextLabScreen() {
   const [mode, setMode] = useState<"input" | "result">("input")
   const [source, setSource] = useState("")
@@ -1537,7 +1549,7 @@ function TextLabScreen() {
         </Section>
         <Section
           header={<Text>{mode === "input" ? "原文" : "结果"}</Text>}
-          footer={<Text>在输入框里粘贴或编辑，再用下面的工具处理。</Text>}
+          footer={<Text>先放入原文，再点下面的工具。处理完会自动切到「结果」。</Text>}
         >
           {mode === "input" ? (
             <TextField
@@ -1564,17 +1576,16 @@ function TextLabScreen() {
             <Text foregroundColor="systemRed">{error}</Text>
           </Section>
         )}
-        <Section header={<Text>工具</Text>}>
-          <ScrollView axis="horizontal" showsIndicators={false}>
-            <HStack spacing={8}>
-              <Button title="清理空白" buttonStyle="bordered" action={() => run("trim")} />
-              <Button title="合并空行" buttonStyle="bordered" action={() => run("blankLines")} />
-              <Button title="删除空行" buttonStyle="bordered" action={() => run("removeEmpty")} />
-              <Button title="行去重" buttonStyle="bordered" action={() => run("dedupe")} />
-              <Button title="行排序" buttonStyle="bordered" action={() => run("sort")} />
-              <Button title="JSON" buttonStyle="bordered" action={() => run("json")} />
-            </HStack>
-          </ScrollView>
+        <Section header={<Text>工具</Text>} footer={<Text>点某一行就会处理当前原文。</Text>}>
+          {TOOLS.map(tool => (
+            <Button
+              key={tool.id}
+              action={() => run(tool.id)}
+            >
+              <Text>{tool.title}</Text>
+              <Text font="caption" foregroundColor="secondary">{tool.detail}</Text>
+            </Button>
+          ))}
         </Section>
       </List>
     </NavigationStack>
