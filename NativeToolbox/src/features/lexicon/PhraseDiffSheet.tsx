@@ -82,7 +82,7 @@ export function PhraseDiffSheet({
         navigationBarTitleDisplayMode="inline"
         listStyle="insetGrouped"
         toolbar={{
-          cancellationAction: <Button title="关闭" action={onClose} />,
+          topBarLeading: <Button title="完成" action={onClose} />,
           confirmationAction: canCommit
             ? <Button title={committing ? "提交中…" : "提交"} disabled={committing} action={commit} />
             : undefined,
