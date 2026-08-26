@@ -893,6 +893,7 @@ function ClipboardRow({ item, reload }: { item: ClipboardItem; reload: () => voi
 
   return (
     <HStack spacing={12}
+      onTapGesture={copy}
       leadingSwipeActions={{
         allowsFullSwipe: false,
         actions: [
@@ -921,18 +922,14 @@ function ClipboardRow({ item, reload }: { item: ClipboardItem; reload: () => voi
         ],
       }}
     >
-      <Image systemName={icon} foregroundColor="systemBlue" />
-      <VStack alignment="leading" spacing={5}>
-        <Text font="body" lineLimit={4}>{item.content ?? ""}</Text>
-        <HStack>
-          <Text font="caption" foregroundColor="secondary">
-            {item.kind === "url" ? "链接" : "文本"} · {relativeTime(item.updated_at)}
-          </Text>
-          <Spacer />
-          {item.is_favorite === 1 && <Image systemName="star.fill" foregroundColor="systemOrange" />}
-        </HStack>
+      <Image systemName={icon} foregroundColor="secondary" />
+      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="body" lineLimit={3}>{item.content ?? ""}</Text>
+        <Text font="caption" foregroundColor="secondary">
+          {item.kind === "url" ? "链接" : "文本"} · {relativeTime(item.updated_at)}
+          {item.is_favorite === 1 ? " · 已收藏" : ""}
+        </Text>
       </VStack>
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="borderless" action={copy} />
     </HStack>
   )
 }
@@ -988,20 +985,25 @@ function ClipboardScreen() {
         navigationTitle="剪贴板"
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
-        searchable={{ value: query, onChanged: setQuery, prompt: "搜索剪贴板" }}
+        searchable={{ value: query, onChanged: setQuery, prompt: "搜索" }}
         overlay={overlay}
+        toolbar={{
+          primaryAction: (
+            <Button
+              title={loading ? "采集中" : "采集"}
+              systemImage="plus"
+              disabled={loading}
+              action={capture}
+            />
+          ),
+        }}
       >
-        <Section>
-          <Button
-            title={loading ? "正在采集…" : "立即采集"}
-            systemImage="arrow.clockwise"
-            disabled={loading}
-            action={capture}
-          />
-        </Section>
-        <Section>
+        <Section
+          header={<Text>筛选</Text>}
+          footer={items.length > 0 ? <Text>点按复制，左滑收藏，右滑删除。</Text> : undefined}
+        >
           <Picker
-            title="筛选"
+            title="类型"
             pickerStyle="segmented"
             value={filter}
             onChanged={value => setFilter(value as Filter)}
@@ -1240,10 +1242,16 @@ function SnippetRow({
 
   return (
     <HStack spacing={12}
-      onTapGesture={onEdit}
+      onTapGesture={copy}
       leadingSwipeActions={{
         allowsFullSwipe: false,
         actions: [
+          <Button
+            title="编辑"
+            systemImage="pencil"
+            tint="systemBlue"
+            action={onEdit}
+          />,
           <Button
             title={snippet.is_favorite ? "取消收藏" : "收藏"}
             systemImage={snippet.is_favorite ? "star.slash" : "star"}
@@ -1276,17 +1284,14 @@ function SnippetRow({
         ],
       }}
     >
-      <Image systemName={snippet.is_template ? "text.badge.plus" : "text.quote"} foregroundColor="systemIndigo" />
-      <VStack alignment="leading" spacing={4}>
-        <Text font="headline" lineLimit={1}>{snippet.title}</Text>
+      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="body" lineLimit={1}>{snippet.title}</Text>
         <Text font="subheadline" foregroundColor="secondary" lineLimit={2}>{previewBody(snippet.body)}</Text>
         <Text font="caption" foregroundColor="secondary">
-          {categoryName} · {relativeTime(snippet.updated_at)}
+          {categoryName}
+          {snippet.is_favorite === 1 ? " · 已收藏" : ""}
         </Text>
       </VStack>
-      <Spacer />
-      {snippet.is_favorite === 1 && <Image systemName="star.fill" foregroundColor="systemOrange" />}
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="borderless" action={copy} />
     </HStack>
   )
 }
@@ -1361,10 +1366,11 @@ function SnippetsScreen() {
         navigationTitle="常用语"
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
-        searchable={{ value: query, onChanged: setQuery, prompt: "搜索标题或内容" }}
+        searchable={{ value: query, onChanged: setQuery, prompt: "搜索" }}
         overlay={overlay}
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptySnippet(categoryFilter === "all" ? null : categoryFilter))} />,
+          topBarTrailing: <Button title="从剪贴板" systemImage="doc.on.clipboard" action={createFromClipboard} />,
         }}
         sheet={{
           isPresented: editor != null,
@@ -1382,7 +1388,7 @@ function SnippetsScreen() {
           ),
         }}
       >
-        <Section>
+        <Section footer={items.length > 0 ? <Text>点按复制，左滑编辑或收藏，右滑删除。</Text> : undefined}>
           <Picker
             title="范围"
             pickerStyle="segmented"
@@ -1392,21 +1398,18 @@ function SnippetsScreen() {
             <Text tag="all">全部</Text>
             <Text tag="favorite">收藏</Text>
           </Picker>
-        </Section>
-        {categories.length > 0 && <Section>
-          <Picker
-            title="分类"
-            value={categoryFilter}
-            onChanged={setCategoryFilter}
-          >
-            <Text tag="all">全部分类</Text>
-            {categories.map(category => (
-              <Text key={category.id} tag={category.id}>{category.name}</Text>
-            ))}
-          </Picker>
-        </Section>}
-        <Section>
-          <Button title="从剪贴板创建" systemImage="doc.on.clipboard" action={createFromClipboard} />
+          {categories.length > 0 && (
+            <Picker
+              title="分类"
+              value={categoryFilter}
+              onChanged={setCategoryFilter}
+            >
+              <Text tag="all">全部</Text>
+              {categories.map(category => (
+                <Text key={category.id} tag={category.id}>{category.name}</Text>
+              ))}
+            </Picker>
+          )}
         </Section>
         {items.length > 0 && <Section>
           {items.map(item => (
@@ -1500,7 +1503,16 @@ function TextLabScreen() {
 
   return (
     <NavigationStack>
-      <VStack spacing={12} navigationTitle="文本工作台" navigationBarTitleDisplayMode="large">
+      <VStack
+        spacing={12}
+        padding={16}
+        navigationTitle="文本"
+        navigationBarTitleDisplayMode="large"
+        toolbar={{
+          primaryAction: <Button title="复制结果" systemImage="doc.on.doc" disabled={!result} action={copyResult} />,
+          topBarTrailing: <Button title="还原" systemImage="arrow.uturn.backward" action={() => setMode("input")} />,
+        }}
+      >
         <Picker title="模式" pickerStyle="segmented" value={mode} onChanged={value => setMode(value as "input" | "result")}>
           <Text tag="input">输入</Text>
           <Text tag="result">结果</Text>
@@ -1513,18 +1525,14 @@ function TextLabScreen() {
         {error != null && <Text foregroundColor="systemRed" font="caption">{error}</Text>}
         <ScrollView axis="horizontal" showsIndicators={false}>
           <HStack spacing={8}>
-            <Button title="清理空白" systemImage="line.3.horizontal.decrease" buttonStyle="bordered" action={() => run("trim")} />
-            <Button title="合并空行" systemImage="line.3.horizontal" buttonStyle="bordered" action={() => run("blankLines")} />
-            <Button title="删除空行" systemImage="minus.rectangle" buttonStyle="bordered" action={() => run("removeEmpty")} />
-            <Button title="行去重" systemImage="square.on.square" buttonStyle="bordered" action={() => run("dedupe")} />
-            <Button title="行排序" systemImage="arrow.up.arrow.down" buttonStyle="bordered" action={() => run("sort")} />
-            <Button title="JSON" systemImage="curlybraces" buttonStyle="bordered" action={() => run("json")} />
+            <Button title="清理空白" buttonStyle="bordered" action={() => run("trim")} />
+            <Button title="合并空行" buttonStyle="bordered" action={() => run("blankLines")} />
+            <Button title="删除空行" buttonStyle="bordered" action={() => run("removeEmpty")} />
+            <Button title="行去重" buttonStyle="bordered" action={() => run("dedupe")} />
+            <Button title="行排序" buttonStyle="bordered" action={() => run("sort")} />
+            <Button title="JSON" buttonStyle="bordered" action={() => run("json")} />
           </HStack>
         </ScrollView>
-        <HStack spacing={12}>
-          <Button title="还原" systemImage="arrow.uturn.backward" action={() => setMode("input")} />
-          <Button title="复制结果" systemImage="doc.on.doc" buttonStyle="borderedProminent" disabled={!result} action={copyResult} />
-        </HStack>
       </VStack>
     </NavigationStack>
   )
@@ -2201,12 +2209,9 @@ function WorkspaceRow({
         <Text font="caption2" foregroundColor="secondary" lineLimit={1}>{workspace.display_path}</Text>
       </VStack>
       <Spacer />
-      <VStack alignment="trailing">
-        <Image systemName={connected ? "checkmark.circle.fill" : "exclamationmark.circle.fill"} foregroundColor={connected ? "systemGreen" : "systemOrange"} />
-        <Text font="caption2" foregroundColor="secondary">
-          {connected ? (workspace.type === "wanxiang" ? "点此预览差异" : "已连接") : "需重新授权"}
-        </Text>
-      </VStack>
+      <Text font="caption" foregroundColor="secondary">
+        {connected ? (workspace.type === "wanxiang" ? "预览差异" : "已连接") : "需重新授权"}
+      </Text>
     </HStack>
   )
 }
@@ -2305,7 +2310,13 @@ function LexiconRow({
 
   return (
     <HStack spacing={12}
-      onTapGesture={onEdit}
+      onTapGesture={copy}
+      leadingSwipeActions={{
+        allowsFullSwipe: false,
+        actions: [
+          <Button title="编辑" systemImage="pencil" tint="systemBlue" action={onEdit} />,
+        ],
+      }}
       trailingSwipeActions={{
         actions: [
           <Button
@@ -2327,16 +2338,13 @@ function LexiconRow({
         ],
       }}
     >
-      <Image systemName="character.book.closed" foregroundColor="systemTeal" />
-      <VStack alignment="leading" spacing={4}>
-        <Text font="headline" lineLimit={1}>{entry.text}</Text>
+      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="body" lineLimit={1}>{entry.text}</Text>
         {subtitle !== "" && <Text font="subheadline" foregroundColor="secondary" lineLimit={1}>{subtitle}</Text>}
         {preview(entry.note) !== "" && (
           <Text font="caption" foregroundColor="secondary" lineLimit={2}>{preview(entry.note)}</Text>
         )}
       </VStack>
-      <Spacer />
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="borderless" action={copy} />
     </HStack>
   )
 }
@@ -2420,6 +2428,7 @@ function LexiconScreen() {
         overlay={overlay}
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
+          topBarTrailing: <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />,
         }}
         sheet={
           editor != null
@@ -2489,34 +2498,36 @@ function LexiconScreen() {
               : undefined
         }
       >
-        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览差异：提交写回万象，导入只进入内部词库。</Text>}>
-          <Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />
-          {workspaces.map(workspace => (
-            <WorkspaceRow
-              key={workspace.id}
-              workspace={workspace}
-              reload={reload}
-              onPreview={() => previewWorkspace(workspace)}
-            />
-          ))}
-        </Section>
-        <Section
-          header={<Text>内部词库</Text>}
-          footer={<Text>{loading ? "正在读取…" : `共 ${total} 个词条。这些数据只存在工具箱本地。`}</Text>}
-        >
+        {workspaces.length > 0 && (
+          <Section header={<Text>工作区</Text>} footer={<Text>点万象目录预览差异。提交写回万象，导入只进内部词库。</Text>}>
+            {workspaces.map(workspace => (
+              <WorkspaceRow
+                key={workspace.id}
+                workspace={workspace}
+                reload={reload}
+                onPreview={() => previewWorkspace(workspace)}
+              />
+            ))}
+          </Section>
+        )}
+        <Section>
           <TextField
             title="搜索"
             value={query}
             onChanged={setQuery}
-            prompt="词语、编码、分类或备注"
+            prompt="词语、编码或备注"
           />
+        </Section>
+        <Section
+          header={<Text>内部词库</Text>}
+          footer={<Text>{loading ? "正在读取…" : `共 ${total} 条。点按复制，左滑编辑，右滑删除。`}</Text>}
+        >
           {entries.length === 0 ? (
             <VStack alignment="leading" spacing={6} padding={{ top: 4, bottom: 8 }}>
               <Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>
               <Text font="caption" foregroundColor="secondary">
-                先在工具箱里维护词条。以后提交到万象时会走差异预览和备份。
+                右上角新建，或从万象差异里导入仅外部存在的词条。
               </Text>
-              <Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />
             </VStack>
           ) : entries.map(entry => (
               <LexiconRow
@@ -2548,9 +2559,8 @@ function SettingsScreen() {
         navigationBarTitleDisplayMode="large"
         formStyle="grouped"
       >
-        <Section header={<Text>剪贴板采集</Text>} footer={<Text>实时监听仅在工具箱脚本活跃期间工作；返回前台时会立即补采。</Text>}>
+        <Section header={<Text>剪贴板</Text>} footer={<Text>脚本在前台时监听；回到前台会补采。点列表即可复制。</Text>}>
           <Toggle title="采集文本和链接" value={settings.captureText} onChanged={value => update({ captureText: value })} />
-          <Toggle title="采集图片（开发中）" value={settings.captureImages} onChanged={value => update({ captureImages: value })} />
           <Picker
             title="重复内容"
             value={settings.duplicatePolicy}
@@ -2572,27 +2582,24 @@ function SettingsScreen() {
           />
         </Section>
 
-        <Section header={<Text>数据</Text>}>
-          <Label title="本地 SQLite 数据库" systemImage="cylinder.split.1x2" />
-          <Label title="导入与导出（开发中）" systemImage="arrow.up.arrow.down.square" />
-          <Label title="iCloud 同步（后续版本）" systemImage="icloud" />
-        </Section>
-
-        <Section header={<Text>词库工作区</Text>} footer={<Text>外部目录只在用户授权后访问；任何写入都需要差异预览与确认。</Text>}>
-          <Label title="在“词库”中连接目录" systemImage="folder.badge.plus" />
-          <Label title="不修改 userdb、gram 和官方 dicts" systemImage="lock.shield" />
+        <Section header={<Text>词库</Text>} footer={<Text>连接目录、预览差异和提交都在「词库」页完成。不会修改 userdb、gram 或官方 dicts。</Text>}>
+          <HStack>
+            <Text>写入方式</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">预览后确认</Text>
+          </HStack>
         </Section>
 
         <Section header={<Text>关于</Text>}>
           <HStack>
-            <Text>数据结构</Text>
+            <Text>版本</Text>
             <Spacer />
-            <Text foregroundColor="secondary">v1</Text>
+            <Text foregroundColor="secondary">0.2.3</Text>
           </HStack>
           <HStack>
-            <Text>工程阶段</Text>
+            <Text>数据</Text>
             <Spacer />
-            <Text foregroundColor="secondary">MVP 骨架</Text>
+            <Text foregroundColor="secondary">本机 SQLite</Text>
           </HStack>
         </Section>
       </Form>

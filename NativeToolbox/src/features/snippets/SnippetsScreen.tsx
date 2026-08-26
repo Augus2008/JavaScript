@@ -178,10 +178,16 @@ function SnippetRow({
 
   return (
     <HStack spacing={12}
-      onTapGesture={onEdit}
+      onTapGesture={copy}
       leadingSwipeActions={{
         allowsFullSwipe: false,
         actions: [
+          <Button
+            title="编辑"
+            systemImage="pencil"
+            tint="systemBlue"
+            action={onEdit}
+          />,
           <Button
             title={snippet.is_favorite ? "取消收藏" : "收藏"}
             systemImage={snippet.is_favorite ? "star.slash" : "star"}
@@ -214,17 +220,14 @@ function SnippetRow({
         ],
       }}
     >
-      <Image systemName={snippet.is_template ? "text.badge.plus" : "text.quote"} foregroundColor="systemIndigo" />
-      <VStack alignment="leading" spacing={4}>
-        <Text font="headline" lineLimit={1}>{snippet.title}</Text>
+      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="body" lineLimit={1}>{snippet.title}</Text>
         <Text font="subheadline" foregroundColor="secondary" lineLimit={2}>{previewBody(snippet.body)}</Text>
         <Text font="caption" foregroundColor="secondary">
-          {categoryName} · {relativeTime(snippet.updated_at)}
+          {categoryName}
+          {snippet.is_favorite === 1 ? " · 已收藏" : ""}
         </Text>
       </VStack>
-      <Spacer />
-      {snippet.is_favorite === 1 && <Image systemName="star.fill" foregroundColor="systemOrange" />}
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="borderless" action={copy} />
     </HStack>
   )
 }
@@ -299,10 +302,11 @@ export function SnippetsScreen() {
         navigationTitle="常用语"
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
-        searchable={{ value: query, onChanged: setQuery, prompt: "搜索标题或内容" }}
+        searchable={{ value: query, onChanged: setQuery, prompt: "搜索" }}
         overlay={overlay}
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptySnippet(categoryFilter === "all" ? null : categoryFilter))} />,
+          topBarTrailing: <Button title="从剪贴板" systemImage="doc.on.clipboard" action={createFromClipboard} />,
         }}
         sheet={{
           isPresented: editor != null,
@@ -320,7 +324,7 @@ export function SnippetsScreen() {
           ),
         }}
       >
-        <Section>
+        <Section footer={items.length > 0 ? <Text>点按复制，左滑编辑或收藏，右滑删除。</Text> : undefined}>
           <Picker
             title="范围"
             pickerStyle="segmented"
@@ -330,21 +334,18 @@ export function SnippetsScreen() {
             <Text tag="all">全部</Text>
             <Text tag="favorite">收藏</Text>
           </Picker>
-        </Section>
-        {categories.length > 0 && <Section>
-          <Picker
-            title="分类"
-            value={categoryFilter}
-            onChanged={setCategoryFilter}
-          >
-            <Text tag="all">全部分类</Text>
-            {categories.map(category => (
-              <Text key={category.id} tag={category.id}>{category.name}</Text>
-            ))}
-          </Picker>
-        </Section>}
-        <Section>
-          <Button title="从剪贴板创建" systemImage="doc.on.clipboard" action={createFromClipboard} />
+          {categories.length > 0 && (
+            <Picker
+              title="分类"
+              value={categoryFilter}
+              onChanged={setCategoryFilter}
+            >
+              <Text tag="all">全部</Text>
+              {categories.map(category => (
+                <Text key={category.id} tag={category.id}>{category.name}</Text>
+              ))}
+            </Picker>
+          )}
         </Section>
         {items.length > 0 && <Section>
           {items.map(item => (

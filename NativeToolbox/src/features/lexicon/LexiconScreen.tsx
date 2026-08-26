@@ -87,12 +87,9 @@ function WorkspaceRow({
         <Text font="caption2" foregroundColor="secondary" lineLimit={1}>{workspace.display_path}</Text>
       </VStack>
       <Spacer />
-      <VStack alignment="trailing">
-        <Image systemName={connected ? "checkmark.circle.fill" : "exclamationmark.circle.fill"} foregroundColor={connected ? "systemGreen" : "systemOrange"} />
-        <Text font="caption2" foregroundColor="secondary">
-          {connected ? (workspace.type === "wanxiang" ? "点此预览差异" : "已连接") : "需重新授权"}
-        </Text>
-      </VStack>
+      <Text font="caption" foregroundColor="secondary">
+        {connected ? (workspace.type === "wanxiang" ? "预览差异" : "已连接") : "需重新授权"}
+      </Text>
     </HStack>
   )
 }
@@ -191,7 +188,13 @@ function LexiconRow({
 
   return (
     <HStack spacing={12}
-      onTapGesture={onEdit}
+      onTapGesture={copy}
+      leadingSwipeActions={{
+        allowsFullSwipe: false,
+        actions: [
+          <Button title="编辑" systemImage="pencil" tint="systemBlue" action={onEdit} />,
+        ],
+      }}
       trailingSwipeActions={{
         actions: [
           <Button
@@ -213,16 +216,13 @@ function LexiconRow({
         ],
       }}
     >
-      <Image systemName="character.book.closed" foregroundColor="systemTeal" />
-      <VStack alignment="leading" spacing={4}>
-        <Text font="headline" lineLimit={1}>{entry.text}</Text>
+      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="body" lineLimit={1}>{entry.text}</Text>
         {subtitle !== "" && <Text font="subheadline" foregroundColor="secondary" lineLimit={1}>{subtitle}</Text>}
         {preview(entry.note) !== "" && (
           <Text font="caption" foregroundColor="secondary" lineLimit={2}>{preview(entry.note)}</Text>
         )}
       </VStack>
-      <Spacer />
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="borderless" action={copy} />
     </HStack>
   )
 }
@@ -306,6 +306,7 @@ export function LexiconScreen() {
         overlay={overlay}
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
+          topBarTrailing: <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />,
         }}
         sheet={
           editor != null
@@ -375,34 +376,36 @@ export function LexiconScreen() {
               : undefined
         }
       >
-        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览差异：提交写回万象，导入只进入内部词库。</Text>}>
-          <Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />
-          {workspaces.map(workspace => (
-            <WorkspaceRow
-              key={workspace.id}
-              workspace={workspace}
-              reload={reload}
-              onPreview={() => previewWorkspace(workspace)}
-            />
-          ))}
-        </Section>
-        <Section
-          header={<Text>内部词库</Text>}
-          footer={<Text>{loading ? "正在读取…" : `共 ${total} 个词条。这些数据只存在工具箱本地。`}</Text>}
-        >
+        {workspaces.length > 0 && (
+          <Section header={<Text>工作区</Text>} footer={<Text>点万象目录预览差异。提交写回万象，导入只进内部词库。</Text>}>
+            {workspaces.map(workspace => (
+              <WorkspaceRow
+                key={workspace.id}
+                workspace={workspace}
+                reload={reload}
+                onPreview={() => previewWorkspace(workspace)}
+              />
+            ))}
+          </Section>
+        )}
+        <Section>
           <TextField
             title="搜索"
             value={query}
             onChanged={setQuery}
-            prompt="词语、编码、分类或备注"
+            prompt="词语、编码或备注"
           />
+        </Section>
+        <Section
+          header={<Text>内部词库</Text>}
+          footer={<Text>{loading ? "正在读取…" : `共 ${total} 条。点按复制，左滑编辑，右滑删除。`}</Text>}
+        >
           {entries.length === 0 ? (
             <VStack alignment="leading" spacing={6} padding={{ top: 4, bottom: 8 }}>
               <Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>
               <Text font="caption" foregroundColor="secondary">
-                先在工具箱里维护词条。以后提交到万象时会走差异预览和备份。
+                右上角新建，或从万象差异里导入仅外部存在的词条。
               </Text>
-              <Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />
             </VStack>
           ) : entries.map(entry => (
               <LexiconRow

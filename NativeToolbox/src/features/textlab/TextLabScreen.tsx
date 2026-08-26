@@ -48,7 +48,16 @@ export function TextLabScreen() {
 
   return (
     <NavigationStack>
-      <VStack spacing={12} navigationTitle="文本工作台" navigationBarTitleDisplayMode="large">
+      <VStack
+        spacing={12}
+        padding={16}
+        navigationTitle="文本"
+        navigationBarTitleDisplayMode="large"
+        toolbar={{
+          primaryAction: <Button title="复制结果" systemImage="doc.on.doc" disabled={!result} action={copyResult} />,
+          topBarTrailing: <Button title="还原" systemImage="arrow.uturn.backward" action={() => setMode("input")} />,
+        }}
+      >
         <Picker title="模式" pickerStyle="segmented" value={mode} onChanged={value => setMode(value as "input" | "result")}>
           <Text tag="input">输入</Text>
           <Text tag="result">结果</Text>
@@ -61,18 +70,14 @@ export function TextLabScreen() {
         {error != null && <Text foregroundColor="systemRed" font="caption">{error}</Text>}
         <ScrollView axis="horizontal" showsIndicators={false}>
           <HStack spacing={8}>
-            <Button title="清理空白" systemImage="line.3.horizontal.decrease" buttonStyle="bordered" action={() => run("trim")} />
-            <Button title="合并空行" systemImage="line.3.horizontal" buttonStyle="bordered" action={() => run("blankLines")} />
-            <Button title="删除空行" systemImage="minus.rectangle" buttonStyle="bordered" action={() => run("removeEmpty")} />
-            <Button title="行去重" systemImage="square.on.square" buttonStyle="bordered" action={() => run("dedupe")} />
-            <Button title="行排序" systemImage="arrow.up.arrow.down" buttonStyle="bordered" action={() => run("sort")} />
-            <Button title="JSON" systemImage="curlybraces" buttonStyle="bordered" action={() => run("json")} />
+            <Button title="清理空白" buttonStyle="bordered" action={() => run("trim")} />
+            <Button title="合并空行" buttonStyle="bordered" action={() => run("blankLines")} />
+            <Button title="删除空行" buttonStyle="bordered" action={() => run("removeEmpty")} />
+            <Button title="行去重" buttonStyle="bordered" action={() => run("dedupe")} />
+            <Button title="行排序" buttonStyle="bordered" action={() => run("sort")} />
+            <Button title="JSON" buttonStyle="bordered" action={() => run("json")} />
           </HStack>
         </ScrollView>
-        <HStack spacing={12}>
-          <Button title="还原" systemImage="arrow.uturn.backward" action={() => setMode("input")} />
-          <Button title="复制结果" systemImage="doc.on.doc" buttonStyle="borderedProminent" disabled={!result} action={copyResult} />
-        </HStack>
       </VStack>
     </NavigationStack>
   )

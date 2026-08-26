@@ -30,9 +30,8 @@ export function SettingsScreen() {
         navigationBarTitleDisplayMode="large"
         formStyle="grouped"
       >
-        <Section header={<Text>剪贴板采集</Text>} footer={<Text>实时监听仅在工具箱脚本活跃期间工作；返回前台时会立即补采。</Text>}>
+        <Section header={<Text>剪贴板</Text>} footer={<Text>脚本在前台时监听；回到前台会补采。点列表即可复制。</Text>}>
           <Toggle title="采集文本和链接" value={settings.captureText} onChanged={value => update({ captureText: value })} />
-          <Toggle title="采集图片（开发中）" value={settings.captureImages} onChanged={value => update({ captureImages: value })} />
           <Picker
             title="重复内容"
             value={settings.duplicatePolicy}
@@ -54,27 +53,24 @@ export function SettingsScreen() {
           />
         </Section>
 
-        <Section header={<Text>数据</Text>}>
-          <Label title="本地 SQLite 数据库" systemImage="cylinder.split.1x2" />
-          <Label title="导入与导出（开发中）" systemImage="arrow.up.arrow.down.square" />
-          <Label title="iCloud 同步（后续版本）" systemImage="icloud" />
-        </Section>
-
-        <Section header={<Text>词库工作区</Text>} footer={<Text>外部目录只在用户授权后访问；任何写入都需要差异预览与确认。</Text>}>
-          <Label title="在“词库”中连接目录" systemImage="folder.badge.plus" />
-          <Label title="不修改 userdb、gram 和官方 dicts" systemImage="lock.shield" />
+        <Section header={<Text>词库</Text>} footer={<Text>连接目录、预览差异和提交都在「词库」页完成。不会修改 userdb、gram 或官方 dicts。</Text>}>
+          <HStack>
+            <Text>写入方式</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">预览后确认</Text>
+          </HStack>
         </Section>
 
         <Section header={<Text>关于</Text>}>
           <HStack>
-            <Text>数据结构</Text>
+            <Text>版本</Text>
             <Spacer />
-            <Text foregroundColor="secondary">v1</Text>
+            <Text foregroundColor="secondary">0.2.3</Text>
           </HStack>
           <HStack>
-            <Text>工程阶段</Text>
+            <Text>数据</Text>
             <Spacer />
-            <Text foregroundColor="secondary">MVP 骨架</Text>
+            <Text foregroundColor="secondary">本机 SQLite</Text>
           </HStack>
         </Section>
       </Form>

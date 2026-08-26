@@ -52,6 +52,7 @@ function ClipboardRow({ item, reload }: { item: ClipboardItem; reload: () => voi
 
   return (
     <HStack spacing={12}
+      onTapGesture={copy}
       leadingSwipeActions={{
         allowsFullSwipe: false,
         actions: [
@@ -80,18 +81,14 @@ function ClipboardRow({ item, reload }: { item: ClipboardItem; reload: () => voi
         ],
       }}
     >
-      <Image systemName={icon} foregroundColor="systemBlue" />
-      <VStack alignment="leading" spacing={5}>
-        <Text font="body" lineLimit={4}>{item.content ?? ""}</Text>
-        <HStack>
-          <Text font="caption" foregroundColor="secondary">
-            {item.kind === "url" ? "链接" : "文本"} · {relativeTime(item.updated_at)}
-          </Text>
-          <Spacer />
-          {item.is_favorite === 1 && <Image systemName="star.fill" foregroundColor="systemOrange" />}
-        </HStack>
+      <Image systemName={icon} foregroundColor="secondary" />
+      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="body" lineLimit={3}>{item.content ?? ""}</Text>
+        <Text font="caption" foregroundColor="secondary">
+          {item.kind === "url" ? "链接" : "文本"} · {relativeTime(item.updated_at)}
+          {item.is_favorite === 1 ? " · 已收藏" : ""}
+        </Text>
       </VStack>
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="borderless" action={copy} />
     </HStack>
   )
 }
@@ -147,20 +144,25 @@ export function ClipboardScreen() {
         navigationTitle="剪贴板"
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
-        searchable={{ value: query, onChanged: setQuery, prompt: "搜索剪贴板" }}
+        searchable={{ value: query, onChanged: setQuery, prompt: "搜索" }}
         overlay={overlay}
+        toolbar={{
+          primaryAction: (
+            <Button
+              title={loading ? "采集中" : "采集"}
+              systemImage="plus"
+              disabled={loading}
+              action={capture}
+            />
+          ),
+        }}
       >
-        <Section>
-          <Button
-            title={loading ? "正在采集…" : "立即采集"}
-            systemImage="arrow.clockwise"
-            disabled={loading}
-            action={capture}
-          />
-        </Section>
-        <Section>
+        <Section
+          header={<Text>筛选</Text>}
+          footer={items.length > 0 ? <Text>点按复制，左滑收藏，右滑删除。</Text> : undefined}
+        >
           <Picker
-            title="筛选"
+            title="类型"
             pickerStyle="segmented"
             value={filter}
             onChanged={value => setFilter(value as Filter)}
