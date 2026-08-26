@@ -262,7 +262,12 @@ export function LexiconScreen() {
         navigationTitle="词库中心"
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
-        searchable={{ value: query, onChanged: setQuery, prompt: "搜索词语、编码或备注" }}
+        searchable={{
+          value: query,
+          onChanged: setQuery,
+          prompt: "搜索词语、编码或备注",
+          placement: "navigationBarDrawer",
+        }}
         overlay={overlay}
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
@@ -292,8 +297,14 @@ export function LexiconScreen() {
           header={<Text>内部词库</Text>}
           footer={<Text>{loading ? "正在读取…" : `共 ${total} 个词条。这些数据只存在工具箱本地。`}</Text>}
         >
+          <TextField
+            title="搜索"
+            value={query}
+            onChanged={setQuery}
+            prompt="词语、编码、分类或备注"
+          />
           {entries.length === 0
-            ? <ContentUnavailableView
+            ? <ContentUnavailableView}
                 label={<Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>}
                 description={<Text>先在工具箱里维护词条。以后提交到万象时会走差异预览和备份。</Text>}
                 actions={[<Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />]}
