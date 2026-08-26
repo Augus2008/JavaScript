@@ -14,6 +14,7 @@ import {
   useEffect,
   useState,
 } from "scripting"
+import type { PhraseDiff } from "../../adapters/wanxiang/custom-phrase"
 import type { LexiconEntry, Workspace } from "../../models/types"
 import {
   countLexiconEntries,
@@ -25,6 +26,8 @@ import {
   upsertWorkspace,
 } from "../../services/database"
 import { chooseAndConnectWorkspace, refreshWorkspace } from "../../services/workspace-bookmarks"
+import { previewCustomPhraseDiff } from "../../services/wanxiang-preview"
+import { PhraseDiffSheet } from "./PhraseDiffSheet"
 
 function emptyEntry(): LexiconEntry {
   const now = Date.now()
@@ -47,10 +50,19 @@ function preview(value: string | null) {
   return (value ?? "").replace(/\s+/g, " ").trim()
 }
 
-function WorkspaceRow({ workspace, reload }: { workspace: Workspace; reload: () => void }) {
+function WorkspaceRow({
+  workspace,
+  reload,
+  onPreview,
+}: {
+  workspace: Workspace
+  reload: () => void
+  onPreview: () => void
+}) {
   const connected = workspace.status === "connected"
   return (
     <HStack spacing={12}
+      onTapGesture={connected && workspace.type === "wanxiang" ? onPreview : undefined}
       trailingSwipeActions={{
         actions: [
           <Button
@@ -76,7 +88,9 @@ function WorkspaceRow({ workspace, reload }: { workspace: Workspace; reload: () 
       <Spacer />
       <VStack alignment="trailing">
         <Image systemName={connected ? "checkmark.circle.fill" : "exclamationmark.circle.fill"} foregroundColor={connected ? "systemGreen" : "systemOrange"} />
-        <Text font="caption2" foregroundColor="secondary">{connected ? "已连接" : "需重新授权"}</Text>
+        <Text font="caption2" foregroundColor="secondary">
+          {connected ? (workspace.type === "wanxiang" ? "点此预览差异" : "已连接") : "需重新授权"}
+        </Text>
       </VStack>
     </HStack>
   )
@@ -220,6 +234,8 @@ export function LexiconScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<LexiconEntry | null>(null)
+  const [diff, setDiff] = useState<PhraseDiff | null>(null)
+  const [previewing, setPreviewing] = useState(false)
 
   const reload = () => {
     Promise.all([
@@ -252,6 +268,28 @@ export function LexiconScreen() {
     }
   }
 
+  const previewWorkspace = async (workspace: Workspace) => {
+    if (previewing) return
+    setPreviewing(true)
+    setError(null)
+    try {
+      const allEntries = await listLexiconEntries("")
+      const next = await previewCustomPhraseDiff(workspace, allEntries)
+      if (next.inserts.length + next.updates.length + next.invalid.length === 0 && next.same.length === 0) {
+        await Dialog.alert({
+          title: "没有可对比的内部词条",
+          message: "只有填写了编码的内部词条才会进入 custom_phrase.txt 差异。请先给词条补上编码。",
+        })
+        return
+      }
+      setDiff(next)
+    } catch (e) {
+      await Dialog.alert({ title: "无法预览差异", message: String(e) })
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
   const overlay = error != null
     ? <ContentUnavailableView title="无法读取词库" systemImage="exclamationmark.triangle" description={error} />
     : undefined
@@ -266,25 +304,40 @@ export function LexiconScreen() {
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
         }}
-        sheet={{
-          isPresented: editor != null,
-          onChanged: presented => { if (!presented) setEditor(null) },
-          content: editor == null ? undefined : (
-            <LexiconEditor
-              key={editor.id}
-              entry={editor}
-              onClose={saved => {
-                setEditor(null)
-                if (saved) reload()
-              }}
-            />
-          ),
-        }}
+        sheet={
+          editor != null
+            ? {
+                isPresented: true,
+                onChanged: presented => { if (!presented) setEditor(null) },
+                content: (
+                  <LexiconEditor
+                    key={editor.id}
+                    entry={editor}
+                    onClose={saved => {
+                      setEditor(null)
+                      if (saved) reload()
+                    }}
+                  />
+                ),
+              }
+            : diff != null
+              ? {
+                  isPresented: true,
+                  onChanged: presented => { if (!presented) setDiff(null) },
+                  content: <PhraseDiffSheet diff={diff} onClose={() => setDiff(null)} />,
+                }
+              : undefined
+        }
       >
-        <Section header={<Text>工作区</Text>} footer={<Text>外部目录目前只做连接和识别，不会写入万象词库。</Text>}>
+        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览 custom_phrase.txt 差异；这一版不会写入外部文件。</Text>}>
           <Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />
           {workspaces.map(workspace => (
-            <WorkspaceRow key={workspace.id} workspace={workspace} reload={reload} />
+            <WorkspaceRow
+              key={workspace.id}
+              workspace={workspace}
+              reload={reload}
+              onPreview={() => previewWorkspace(workspace)}
+            />
           ))}
         </Section>
         <Section

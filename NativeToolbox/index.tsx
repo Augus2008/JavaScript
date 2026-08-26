@@ -1475,6 +1475,216 @@ function TextLabScreen() {
     </NavigationStack>
   )
 }
+// ---- adapters/wanxiang/custom-phrase.ts ----
+type PhraseKind = "comment" | "blank" | "entry" | "invalid"
+
+type PhraseLine = {
+  lineNumber: number
+  raw: string
+  kind: PhraseKind
+  text?: string
+  code?: string
+  weight?: number | null
+  error?: string
+}
+
+type PhraseEntry = {
+  key: string
+  text: string
+  code: string
+  weight: number | null
+  lineNumber: number
+}
+
+type PhraseDocument = {
+  lines: PhraseLine[]
+  entries: PhraseEntry[]
+  invalid: PhraseLine[]
+  hash: string
+}
+
+type PhraseChangeKind = "insert" | "update" | "same" | "externalOnly"
+
+type PhraseDiffItem = {
+  kind: PhraseChangeKind
+  key: string
+  text: string
+  code: string
+  internalWeight: number | null
+  externalWeight: number | null
+  internalNote?: string | null
+}
+
+type PhraseDiff = {
+  inserts: PhraseDiffItem[]
+  updates: PhraseDiffItem[]
+  same: PhraseDiffItem[]
+  externalOnly: PhraseDiffItem[]
+  invalid: PhraseLine[]
+  hash: string
+  path: string
+}
+
+function phraseKey(text: string, code: string) {
+  return `${text}\u0000${code}`
+}
+
+function parseWeight(value: string | undefined) {
+  if (value == null || value.trim() === "") return null
+  const number = Number(value.trim())
+  if (!Number.isInteger(number)) return null
+  return number
+}
+
+function parseCustomPhrase(content: string): Omit<PhraseDocument, "hash"> {
+  const lines: PhraseLine[] = []
+  const entries: PhraseEntry[] = []
+  const invalid: PhraseLine[] = []
+
+  content.replace(/\r\n?/g, "\n").split("\n").forEach((raw, index) => {
+    const lineNumber = index + 1
+    const trimmed = raw.trim()
+    if (trimmed === "") {
+      lines.push({ lineNumber, raw, kind: "blank" })
+      return
+    }
+    if (trimmed.startsWith("#")) {
+      lines.push({ lineNumber, raw, kind: "comment" })
+      return
+    }
+
+    if (raw.includes(" ") && !raw.includes("\t")) {
+      const invalidLine: PhraseLine = {
+        lineNumber,
+        raw,
+        kind: "invalid",
+        error: "数据行必须使用 Tab 分隔，不能用空格假冒",
+      }
+      lines.push(invalidLine)
+      invalid.push(invalidLine)
+      return
+    }
+
+    const parts = raw.split("\t")
+    const text = (parts[0] ?? "").trim()
+    const code = (parts[1] ?? "").trim()
+    const weightRaw = parts[2]
+    if (!text || !code || parts.length > 3) {
+      const invalidLine: PhraseLine = {
+        lineNumber,
+        raw,
+        kind: "invalid",
+        error: !text || !code ? "缺少词语或编码" : "列数过多",
+      }
+      lines.push(invalidLine)
+      invalid.push(invalidLine)
+      return
+    }
+
+    const weight = parseWeight(weightRaw)
+    if (weightRaw != null && weightRaw.trim() !== "" && weight == null) {
+      const invalidLine: PhraseLine = {
+        lineNumber,
+        raw,
+        kind: "invalid",
+        text,
+        code,
+        error: "权重必须是整数",
+      }
+      lines.push(invalidLine)
+      invalid.push(invalidLine)
+      return
+    }
+
+    const entry: PhraseEntry = {
+      key: phraseKey(text, code),
+      text,
+      code,
+      weight,
+      lineNumber,
+    }
+    lines.push({ lineNumber, raw, kind: "entry", text, code, weight })
+    entries.push(entry)
+  })
+
+  return { lines, entries, invalid }
+}
+
+function hashCustomPhrase(content: string) {
+  const data = Data.fromRawString(content)
+  if (data == null) throw new Error("custom_phrase.txt 不是有效 UTF-8 文本")
+  return Crypto.sha256(data).toHexString()
+}
+
+function parseCustomPhraseDocument(content: string): PhraseDocument {
+  return {
+    ...parseCustomPhrase(content),
+    hash: hashCustomPhrase(content),
+  }
+}
+
+type InternalPhrase = {
+  text: string
+  code: string | null
+  weight: number
+  note?: string | null
+}
+
+function diffCustomPhrase(internal: InternalPhrase[], document: PhraseDocument, path: string): PhraseDiff {
+  const external = new Map(document.entries.map(entry => [entry.key, entry]))
+  const inserts: PhraseDiffItem[] = []
+  const updates: PhraseDiffItem[] = []
+  const same: PhraseDiffItem[] = []
+  const seen = new Set<string>()
+
+  for (const item of internal) {
+    const code = item.code?.trim() ?? ""
+    if (!code) continue
+    const key = phraseKey(item.text, code)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const existing = external.get(key)
+    const diffItem: PhraseDiffItem = {
+      kind: "same",
+      key,
+      text: item.text,
+      code,
+      internalWeight: item.weight,
+      externalWeight: existing?.weight ?? null,
+      internalNote: item.note ?? null,
+    }
+    if (existing == null) {
+      inserts.push({ ...diffItem, kind: "insert" })
+    } else if ((existing.weight ?? null) !== item.weight) {
+      updates.push({ ...diffItem, kind: "update" })
+    } else {
+      same.push(diffItem)
+    }
+  }
+
+  const externalOnly: PhraseDiffItem[] = []
+  for (const entry of document.entries) {
+    if (seen.has(entry.key)) continue
+    externalOnly.push({
+      kind: "externalOnly",
+      key: entry.key,
+      text: entry.text,
+      code: entry.code,
+      internalWeight: null,
+      externalWeight: entry.weight,
+    })
+  }
+
+  return {
+    inserts,
+    updates,
+    same,
+    externalOnly,
+    invalid: document.invalid,
+    hash: document.hash,
+    path,
+  }
+}
 // ---- services/workspace-bookmarks.ts ----
 function hashText(text: string) {
   const data = Data.fromRawString(text)
@@ -1534,6 +1744,139 @@ async function refreshWorkspace(workspace: Workspace) {
     : null
   return { ...workspace, display_path: root, version, status: "connected" as const, last_checked_at: Date.now() }
 }
+// ---- services/wanxiang-preview.ts ----
+async function readCustomPhraseFile(workspace: Workspace) {
+  const root = FileManager.bookmarkedPath(workspace.bookmark_name) ?? workspace.display_path
+  if (!root) throw new Error("工作区目录无法访问")
+  const path = Path.join(root, "custom_phrase.txt")
+  if (!(await FileManager.exists(path))) {
+    throw new Error("这个目录里没有 custom_phrase.txt")
+  }
+  const content = await FileManager.readAsString(path)
+  return { path, content, document: parseCustomPhraseDocument(content) }
+}
+
+async function previewCustomPhraseDiff(workspace: Workspace, internal: InternalPhrase[]): Promise<PhraseDiff> {
+  if (workspace.type !== "wanxiang") {
+    throw new Error("只有已识别的万象目录才能预览 custom_phrase.txt")
+  }
+  if (workspace.status !== "connected") {
+    throw new Error("工作区未连接，请先重新授权目录")
+  }
+  const { path, document } = await readCustomPhraseFile(workspace)
+  return diffCustomPhrase(internal, document, path)
+}
+// ---- features/lexicon/PhraseDiffSheet.tsx ----
+function DiffRow({ item, detail }: { item: PhraseDiffItem; detail: string }) {
+  return (
+    <VStack alignment="leading" spacing={4}>
+      <Text font="headline">{item.text}</Text>
+      <Text font="subheadline" foregroundColor="secondary">{item.code} · {detail}</Text>
+    </VStack>
+  )
+}
+
+function PhraseDiffSheet({
+  diff,
+  onClose,
+}: {
+  diff: PhraseDiff
+  onClose: () => void
+}) {
+  const pending = diff.inserts.length + diff.updates.length
+  return (
+    <NavigationStack>
+      <List
+        navigationTitle="差异预览"
+        navigationBarTitleDisplayMode="inline"
+        listStyle="insetGrouped"
+        toolbar={{
+          cancellationAction: <Button title="关闭" action={onClose} />,
+        }}
+      >
+        <Section footer={<Text>本次只预览，不会写入 custom_phrase.txt，也不会改 userdb / gram / 官方 dicts。</Text>}>
+          <HStack>
+            <Text>待新增</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">{diff.inserts.length}</Text>
+          </HStack>
+          <HStack>
+            <Text>待更新权重</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">{diff.updates.length}</Text>
+          </HStack>
+          <HStack>
+            <Text>已一致</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">{diff.same.length}</Text>
+          </HStack>
+          <HStack>
+            <Text>仅外部存在</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">{diff.externalOnly.length}</Text>
+          </HStack>
+          <HStack>
+            <Text>格式异常</Text>
+            <Spacer />
+            <Text foregroundColor="secondary">{diff.invalid.length}</Text>
+          </HStack>
+        </Section>
+        {diff.inserts.length > 0 && (
+          <Section header={<Text>将新增到万象</Text>}>
+            {diff.inserts.map(item => (
+              <DiffRow
+                key={`insert-${item.key}`}
+                item={item}
+                detail={`内部权重 ${item.internalWeight ?? "-"}`}
+              />
+            ))}
+          </Section>
+        )}
+        {diff.updates.length > 0 && (
+          <Section header={<Text>权重不同</Text>}>
+            {diff.updates.map(item => (
+              <DiffRow
+                key={`update-${item.key}`}
+                item={item}
+                detail={`内部 ${item.internalWeight ?? "-"} → 外部 ${item.externalWeight ?? "-"}`}
+              />
+            ))}
+          </Section>
+        )}
+        {diff.invalid.length > 0 && (
+          <Section header={<Text>外部文件异常行</Text>} footer={<Text>这些行不会被提交覆盖；请先在万象文件里修好。</Text>}>
+            {diff.invalid.map(line => (
+              <VStack key={`invalid-${line.lineNumber}`} alignment="leading" spacing={4}>
+                <Text font="headline">第 {line.lineNumber} 行</Text>
+                <Text font="caption" foregroundColor="secondary">{line.error ?? "无法解析"}</Text>
+                <Text font="caption2" foregroundColor="secondary" lineLimit={3}>{line.raw}</Text>
+              </VStack>
+            ))}
+          </Section>
+        )}
+        {diff.externalOnly.length > 0 && (
+          <Section header={<Text>仅外部存在</Text>} footer={<Text>工具箱不会删除这些现有词条。</Text>}>
+            {diff.externalOnly.slice(0, 30).map(item => (
+              <DiffRow
+                key={`external-${item.key}`}
+                item={item}
+                detail={`外部权重 ${item.externalWeight ?? "默认"}`}
+              />
+            ))}
+            {diff.externalOnly.length > 30 && (
+              <Text foregroundColor="secondary">还有 {diff.externalOnly.length - 30} 条未展开</Text>
+            )}
+          </Section>
+        )}
+        {pending === 0 && diff.invalid.length === 0 && (
+          <Section>
+            <Text>内部有编码的词条已经和 custom_phrase.txt 一致，没有可提交差异。</Text>
+          </Section>
+        )}
+      </List>
+    </NavigationStack>
+  )
+}
 // ---- features/lexicon/LexiconScreen.tsx ----
 function emptyEntry(): LexiconEntry {
   const now = Date.now()
@@ -1556,10 +1899,19 @@ function preview(value: string | null) {
   return (value ?? "").replace(/\s+/g, " ").trim()
 }
 
-function WorkspaceRow({ workspace, reload }: { workspace: Workspace; reload: () => void }) {
+function WorkspaceRow({
+  workspace,
+  reload,
+  onPreview,
+}: {
+  workspace: Workspace
+  reload: () => void
+  onPreview: () => void
+}) {
   const connected = workspace.status === "connected"
   return (
     <HStack spacing={12}
+      onTapGesture={connected && workspace.type === "wanxiang" ? onPreview : undefined}
       trailingSwipeActions={{
         actions: [
           <Button
@@ -1585,7 +1937,9 @@ function WorkspaceRow({ workspace, reload }: { workspace: Workspace; reload: () 
       <Spacer />
       <VStack alignment="trailing">
         <Image systemName={connected ? "checkmark.circle.fill" : "exclamationmark.circle.fill"} foregroundColor={connected ? "systemGreen" : "systemOrange"} />
-        <Text font="caption2" foregroundColor="secondary">{connected ? "已连接" : "需重新授权"}</Text>
+        <Text font="caption2" foregroundColor="secondary">
+          {connected ? (workspace.type === "wanxiang" ? "点此预览差异" : "已连接") : "需重新授权"}
+        </Text>
       </VStack>
     </HStack>
   )
@@ -1729,6 +2083,8 @@ function LexiconScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<LexiconEntry | null>(null)
+  const [diff, setDiff] = useState<PhraseDiff | null>(null)
+  const [previewing, setPreviewing] = useState(false)
 
   const reload = () => {
     Promise.all([
@@ -1761,6 +2117,28 @@ function LexiconScreen() {
     }
   }
 
+  const previewWorkspace = async (workspace: Workspace) => {
+    if (previewing) return
+    setPreviewing(true)
+    setError(null)
+    try {
+      const allEntries = await listLexiconEntries("")
+      const next = await previewCustomPhraseDiff(workspace, allEntries)
+      if (next.inserts.length + next.updates.length + next.invalid.length === 0 && next.same.length === 0) {
+        await Dialog.alert({
+          title: "没有可对比的内部词条",
+          message: "只有填写了编码的内部词条才会进入 custom_phrase.txt 差异。请先给词条补上编码。",
+        })
+        return
+      }
+      setDiff(next)
+    } catch (e) {
+      await Dialog.alert({ title: "无法预览差异", message: String(e) })
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
   const overlay = error != null
     ? <ContentUnavailableView title="无法读取词库" systemImage="exclamationmark.triangle" description={error} />
     : undefined
@@ -1775,25 +2153,40 @@ function LexiconScreen() {
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
         }}
-        sheet={{
-          isPresented: editor != null,
-          onChanged: presented => { if (!presented) setEditor(null) },
-          content: editor == null ? undefined : (
-            <LexiconEditor
-              key={editor.id}
-              entry={editor}
-              onClose={saved => {
-                setEditor(null)
-                if (saved) reload()
-              }}
-            />
-          ),
-        }}
+        sheet={
+          editor != null
+            ? {
+                isPresented: true,
+                onChanged: presented => { if (!presented) setEditor(null) },
+                content: (
+                  <LexiconEditor
+                    key={editor.id}
+                    entry={editor}
+                    onClose={saved => {
+                      setEditor(null)
+                      if (saved) reload()
+                    }}
+                  />
+                ),
+              }
+            : diff != null
+              ? {
+                  isPresented: true,
+                  onChanged: presented => { if (!presented) setDiff(null) },
+                  content: <PhraseDiffSheet diff={diff} onClose={() => setDiff(null)} />,
+                }
+              : undefined
+        }
       >
-        <Section header={<Text>工作区</Text>} footer={<Text>外部目录目前只做连接和识别，不会写入万象词库。</Text>}>
+        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览 custom_phrase.txt 差异；这一版不会写入外部文件。</Text>}>
           <Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />
           {workspaces.map(workspace => (
-            <WorkspaceRow key={workspace.id} workspace={workspace} reload={reload} />
+            <WorkspaceRow
+              key={workspace.id}
+              workspace={workspace}
+              reload={reload}
+              onPreview={() => previewWorkspace(workspace)}
+            />
           ))}
         </Section>
         <Section
