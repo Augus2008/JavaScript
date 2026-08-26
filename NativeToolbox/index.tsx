@@ -1479,13 +1479,14 @@ const TOOLS: Array<{
   id: TextOperation
   title: string
   detail: string
+  icon: string
 }> = [
-  { id: "trim", title: "清理首尾空白", detail: "去掉全文开头和结尾的空格、空行" },
-  { id: "blankLines", title: "合并多余空行", detail: "连续多个空行压成一个" },
-  { id: "removeEmpty", title: "删除空行", detail: "去掉所有空白行" },
-  { id: "dedupe", title: "行去重", detail: "重复行只留第一次出现的" },
-  { id: "sort", title: "按行排序", detail: "按中文顺序排列每一行" },
-  { id: "json", title: "格式化 JSON", detail: "把 JSON 整理成缩进文本" },
+  { id: "trim", title: "清理首尾空白", detail: "去掉全文开头和结尾的空格、空行", icon: "text.trim" },
+  { id: "blankLines", title: "合并多余空行", detail: "连续多个空行压成一个", icon: "line.3.horizontal.decrease" },
+  { id: "removeEmpty", title: "删除空行", detail: "去掉所有空白行", icon: "minus.rectangle" },
+  { id: "dedupe", title: "行去重", detail: "重复行只留第一次出现的", icon: "square.on.square" },
+  { id: "sort", title: "按行排序", detail: "按中文顺序排列每一行", icon: "arrow.up.arrow.down" },
+  { id: "json", title: "格式化 JSON", detail: "把 JSON 整理成缩进文本", icon: "curlybraces" },
 ]
 
 function TextLabScreen() {
@@ -1576,15 +1577,21 @@ function TextLabScreen() {
             <Text foregroundColor="systemRed">{error}</Text>
           </Section>
         )}
-        <Section header={<Text>工具</Text>} footer={<Text>点某一行就会处理当前原文。</Text>}>
+        <Section header={<Text>工具</Text>} footer={<Text>点按一项处理当前原文。</Text>}>
           {TOOLS.map(tool => (
-            <Button
+            <HStack
               key={tool.id}
-              action={() => run(tool.id)}
+              spacing={12}
+              onTapGesture={() => run(tool.id)}
             >
-              <Text>{tool.title}</Text>
-              <Text font="caption" foregroundColor="secondary">{tool.detail}</Text>
-            </Button>
+              <Image systemName={tool.icon} foregroundColor="secondary" frame={{ width: 24 }} />
+              <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                <Text font="body">{tool.title}</Text>
+                <Text font="caption" foregroundColor="secondary">{tool.detail}</Text>
+              </VStack>
+              <Spacer />
+              <Image systemName="chevron.right" foregroundColor="tertiaryLabel" />
+            </HStack>
           ))}
         </Section>
       </List>
