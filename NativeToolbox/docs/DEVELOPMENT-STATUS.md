@@ -89,7 +89,12 @@
 
 ## Slice 4：内部词条 CRUD
 
-状态：已发布 `v0.1.8`。
+状态：已发布 `v0.1.9`。
+
+### 热修复（v0.1.9）
+
+- [x] 修复词库空状态 JSX 写成 `<ContentUnavailableView}` 导致无法启动
+- [x] 去掉系统 `searchable` / `navigationBarDrawer`，改用列表内常驻搜索框
 
 ### 热修复（v0.1.8）
 

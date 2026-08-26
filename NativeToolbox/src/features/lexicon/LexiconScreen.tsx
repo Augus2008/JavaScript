@@ -262,12 +262,6 @@ export function LexiconScreen() {
         navigationTitle="词库中心"
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
-        searchable={{
-          value: query,
-          onChanged: setQuery,
-          prompt: "搜索词语、编码或备注",
-          placement: "navigationBarDrawer",
-        }}
         overlay={overlay}
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
@@ -303,13 +297,15 @@ export function LexiconScreen() {
             onChanged={setQuery}
             prompt="词语、编码、分类或备注"
           />
-          {entries.length === 0
-            ? <ContentUnavailableView}
-                label={<Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>}
-                description={<Text>先在工具箱里维护词条。以后提交到万象时会走差异预览和备份。</Text>}
-                actions={[<Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />]}
-              />
-            : entries.map(entry => (
+          {entries.length === 0 ? (
+            <VStack alignment="leading" spacing={6} padding={{ top: 4, bottom: 8 }}>
+              <Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>
+              <Text font="caption" foregroundColor="secondary">
+                先在工具箱里维护词条。以后提交到万象时会走差异预览和备份。
+              </Text>
+              <Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />
+            </VStack>
+          ) : entries.map(entry => (
               <LexiconRow
                 key={entry.id}
                 entry={entry}
