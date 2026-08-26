@@ -133,7 +133,22 @@
 - 备份、冲突提交、回滚
 - 修改 userdb / gram / 官方 dicts
 
-## Slice 6 建议顺序
+## Slice 6：custom_phrase 安全提交
 
-1. custom_phrase 安全提交与备份；
-2. 冲突检测与回滚。
+状态：已发布 `v0.2.1`。
+
+### 完成
+
+- [x] 提交前再次核对文件哈希，变化则禁止覆盖
+- [x] 在万象目录 `ToolboxBackups/` 备份原文件
+- [x] 写入临时文件并重新解析校验
+- [x] 通过后替换 `custom_phrase.txt`
+- [x] 新增进入 NativeToolbox managed 区块；更新原行权重
+- [x] 不删除仅外部存在的词条
+- [x] 不碰 userdb / gram / 官方 dicts
+
+### 明确不做（本切片）
+
+- 自动重新部署 Rime
+- 回滚 UI
+- 修改官方词典或语法模型

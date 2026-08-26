@@ -26,7 +26,7 @@ import {
   upsertWorkspace,
 } from "../../services/database"
 import { chooseAndConnectWorkspace, refreshWorkspace } from "../../services/workspace-bookmarks"
-import { previewCustomPhraseDiff } from "../../services/wanxiang-preview"
+import { commitCustomPhraseDiff, previewCustomPhraseDiff } from "../../services/wanxiang-preview"
 import { PhraseDiffSheet } from "./PhraseDiffSheet"
 
 function emptyEntry(): LexiconEntry {
@@ -235,6 +235,7 @@ export function LexiconScreen() {
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<LexiconEntry | null>(null)
   const [diff, setDiff] = useState<PhraseDiff | null>(null)
+  const [diffWorkspace, setDiffWorkspace] = useState<Workspace | null>(null)
   const [previewing, setPreviewing] = useState(false)
 
   const reload = () => {
@@ -283,6 +284,7 @@ export function LexiconScreen() {
         return
       }
       setDiff(next)
+      setDiffWorkspace(workspace)
     } catch (e) {
       await Dialog.alert({ title: "无法预览差异", message: String(e) })
     } finally {
@@ -323,8 +325,32 @@ export function LexiconScreen() {
             : diff != null
               ? {
                   isPresented: true,
-                  onChanged: presented => { if (!presented) setDiff(null) },
-                  content: <PhraseDiffSheet diff={diff} onClose={() => setDiff(null)} />,
+                  onChanged: presented => {
+                    if (!presented) {
+                      setDiff(null)
+                      setDiffWorkspace(null)
+                    }
+                  },
+                  content: (
+                    <PhraseDiffSheet
+                      diff={diff}
+                      onClose={() => {
+                        setDiff(null)
+                        setDiffWorkspace(null)
+                      }}
+                      onCommit={async () => {
+                        if (diffWorkspace == null) throw new Error("没有可提交的工作区")
+                        const allEntries = await listLexiconEntries("")
+                        const result = await commitCustomPhraseDiff(diffWorkspace, allEntries, diff.hash)
+                        await Dialog.alert({
+                          title: "已提交",
+                          message: `新增 ${result.inserted} 条，更新 ${result.updated} 条。备份目录：ToolboxBackups`,
+                        })
+                        setDiff(null)
+                        setDiffWorkspace(null)
+                      }}
+                    />
+                  ),
                 }
               : undefined
         }

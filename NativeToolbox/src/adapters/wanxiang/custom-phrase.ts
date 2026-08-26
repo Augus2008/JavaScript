@@ -207,3 +207,56 @@ export function diffCustomPhrase(internal: InternalPhrase[], document: PhraseDoc
     path,
   }
 }
+
+const MANAGED_BEGIN = "# >>> NativeToolbox managed entries"
+const MANAGED_END = "# <<< NativeToolbox managed entries"
+
+function formatEntry(text: string, code: string, weight: number | null) {
+  return weight == null ? `${text}\t${code}` : `${text}\t${code}\t${weight}`
+}
+
+export function applyCustomPhraseDiff(original: string, diff: PhraseDiff) {
+  if (diff.invalid.length > 0) {
+    throw new Error("外部 custom_phrase.txt 有格式异常行，禁止提交")
+  }
+  const updates = new Map(diff.updates.map(item => [item.key, item]))
+  const kept: string[] = []
+  let inManaged = false
+
+  for (const raw of original.replace(/\r\n?/g, "\n").split("\n")) {
+    const trimmed = raw.trim()
+    if (trimmed === MANAGED_BEGIN) {
+      inManaged = true
+      continue
+    }
+    if (trimmed === MANAGED_END) {
+      inManaged = false
+      continue
+    }
+    if (inManaged) continue
+    if (trimmed === "" || trimmed.startsWith("#") || !raw.includes("\t")) {
+      kept.push(raw)
+      continue
+    }
+    const parts = raw.split("\t")
+    const text = (parts[0] ?? "").trim()
+    const code = (parts[1] ?? "").trim()
+    const update = updates.get(phraseKey(text, code))
+    if (update) {
+      kept.push(formatEntry(update.text, update.code, update.internalWeight))
+    } else {
+      kept.push(raw)
+    }
+  }
+
+  while (kept.length > 0 && kept[kept.length - 1].trim() === "") kept.pop()
+
+  const managed = [
+    MANAGED_BEGIN,
+    ...diff.inserts.map(item => formatEntry(item.text, item.code, item.internalWeight)),
+    MANAGED_END,
+  ]
+  const body = kept.join("\n").replace(/\n+$/g, "")
+  if (diff.inserts.length === 0) return `${body}\n`
+  return `${body}\n\n${managed.join("\n")}\n`
+}

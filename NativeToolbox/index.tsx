@@ -1685,6 +1685,59 @@ function diffCustomPhrase(internal: InternalPhrase[], document: PhraseDocument, 
     path,
   }
 }
+
+const MANAGED_BEGIN = "# >>> NativeToolbox managed entries"
+const MANAGED_END = "# <<< NativeToolbox managed entries"
+
+function formatEntry(text: string, code: string, weight: number | null) {
+  return weight == null ? `${text}\t${code}` : `${text}\t${code}\t${weight}`
+}
+
+function applyCustomPhraseDiff(original: string, diff: PhraseDiff) {
+  if (diff.invalid.length > 0) {
+    throw new Error("外部 custom_phrase.txt 有格式异常行，禁止提交")
+  }
+  const updates = new Map(diff.updates.map(item => [item.key, item]))
+  const kept: string[] = []
+  let inManaged = false
+
+  for (const raw of original.replace(/\r\n?/g, "\n").split("\n")) {
+    const trimmed = raw.trim()
+    if (trimmed === MANAGED_BEGIN) {
+      inManaged = true
+      continue
+    }
+    if (trimmed === MANAGED_END) {
+      inManaged = false
+      continue
+    }
+    if (inManaged) continue
+    if (trimmed === "" || trimmed.startsWith("#") || !raw.includes("\t")) {
+      kept.push(raw)
+      continue
+    }
+    const parts = raw.split("\t")
+    const text = (parts[0] ?? "").trim()
+    const code = (parts[1] ?? "").trim()
+    const update = updates.get(phraseKey(text, code))
+    if (update) {
+      kept.push(formatEntry(update.text, update.code, update.internalWeight))
+    } else {
+      kept.push(raw)
+    }
+  }
+
+  while (kept.length > 0 && kept[kept.length - 1].trim() === "") kept.pop()
+
+  const managed = [
+    MANAGED_BEGIN,
+    ...diff.inserts.map(item => formatEntry(item.text, item.code, item.internalWeight)),
+    MANAGED_END,
+  ]
+  const body = kept.join("\n").replace(/\n+$/g, "")
+  if (diff.inserts.length === 0) return `${body}\n`
+  return `${body}\n\n${managed.join("\n")}\n`
+}
 // ---- services/workspace-bookmarks.ts ----
 function hashText(text: string) {
   const data = Data.fromRawString(text)
@@ -1745,13 +1798,24 @@ async function refreshWorkspace(workspace: Workspace) {
   return { ...workspace, display_path: root, version, status: "connected" as const, last_checked_at: Date.now() }
 }
 // ---- services/wanxiang-preview.ts ----
-async function readCustomPhraseFile(workspace: Workspace) {
+function timestampName() {
+  const d = new Date()
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+}
+
+async function resolvePhrasePath(workspace: Workspace) {
   const root = FileManager.bookmarkedPath(workspace.bookmark_name) ?? workspace.display_path
   if (!root) throw new Error("工作区目录无法访问")
   const path = Path.join(root, "custom_phrase.txt")
   if (!(await FileManager.exists(path))) {
     throw new Error("这个目录里没有 custom_phrase.txt")
   }
+  return { root, path }
+}
+
+async function readCustomPhraseFile(workspace: Workspace) {
+  const { path } = await resolvePhrasePath(workspace)
   const content = await FileManager.readAsString(path)
   return { path, content, document: parseCustomPhraseDocument(content) }
 }
@@ -1766,6 +1830,89 @@ async function previewCustomPhraseDiff(workspace: Workspace, internal: InternalP
   const { path, document } = await readCustomPhraseFile(workspace)
   return diffCustomPhrase(internal, document, path)
 }
+
+type PhraseCommitResult = {
+  backupPath: string
+  inserted: number
+  updated: number
+  hash: string
+}
+
+async function commitCustomPhraseDiff(
+  workspace: Workspace,
+  internal: InternalPhrase[],
+  expectedHash: string,
+): Promise<PhraseCommitResult> {
+  if (workspace.type !== "wanxiang") {
+    throw new Error("只有已识别的万象目录才能提交 custom_phrase.txt")
+  }
+  if (workspace.status !== "connected") {
+    throw new Error("工作区未连接，请先重新授权目录")
+  }
+
+  const { root, path } = await resolvePhrasePath(workspace)
+  const current = await FileManager.readAsString(path)
+  const currentHash = hashCustomPhrase(current)
+  if (currentHash !== expectedHash) {
+    throw new Error("custom_phrase.txt 在预览后已被外部修改，已禁止覆盖。请重新预览后再提交。")
+  }
+
+  const document = parseCustomPhraseDocument(current)
+  const diff = diffCustomPhrase(internal, document, path)
+  if (diff.invalid.length > 0) {
+    throw new Error("外部文件仍有格式异常行，禁止提交")
+  }
+  if (diff.inserts.length + diff.updates.length === 0) {
+    throw new Error("没有可提交的差异")
+  }
+
+  const nextContent = applyCustomPhraseDiff(current, diff)
+  const parsedNext = parseCustomPhraseDocument(nextContent)
+  if (parsedNext.invalid.length > 0) {
+    throw new Error("合成后的 custom_phrase.txt 无法通过解析，已中止写入")
+  }
+  for (const item of [...diff.inserts, ...diff.updates]) {
+    const found = parsedNext.entries.find(entry => entry.key === item.key)
+    if (found == null || found.weight !== item.internalWeight) {
+      throw new Error(`合成结果缺少或未更新「${item.text} / ${item.code}」`)
+    }
+  }
+
+  const backupRoot = Path.join(root, "ToolboxBackups", timestampName())
+  await FileManager.createDirectory(backupRoot, true)
+  const backupPath = Path.join(backupRoot, "custom_phrase.txt")
+  FileManager.copyFileSync(path, backupPath)
+
+  const tempPath = Path.join(root, `custom_phrase.txt.toolbox-${timestampName()}.tmp`)
+  await FileManager.writeAsString(tempPath, nextContent)
+  const tempText = await FileManager.readAsString(tempPath)
+  const tempParsed = parseCustomPhraseDocument(tempText)
+  if (tempParsed.invalid.length > 0 || tempParsed.hash !== parsedNext.hash) {
+    if (await FileManager.exists(tempPath)) FileManager.removeSync(tempPath)
+    throw new Error("临时文件校验失败，已删除临时文件，原文件未改动")
+  }
+
+  const replacePath = Path.join(root, `custom_phrase.txt.replacing-${timestampName()}`)
+  FileManager.copyFileSync(tempPath, replacePath)
+  if (await FileManager.exists(path)) FileManager.removeSync(path)
+  FileManager.copyFileSync(replacePath, path)
+  FileManager.removeSync(tempPath)
+  FileManager.removeSync(replacePath)
+
+  const written = await FileManager.readAsString(path)
+  const writtenHash = hashCustomPhrase(written)
+  if (writtenHash !== parsedNext.hash) {
+    FileManager.copyFileSync(backupPath, path)
+    throw new Error("写入后哈希不一致，已从备份恢复原文件")
+  }
+
+  return {
+    backupPath,
+    inserted: diff.inserts.length,
+    updated: diff.updates.length,
+    hash: writtenHash,
+  }
+}
 // ---- features/lexicon/PhraseDiffSheet.tsx ----
 function DiffRow({ item, detail }: { item: PhraseDiffItem; detail: string }) {
   return (
@@ -1779,11 +1926,35 @@ function DiffRow({ item, detail }: { item: PhraseDiffItem; detail: string }) {
 function PhraseDiffSheet({
   diff,
   onClose,
+  onCommit,
 }: {
   diff: PhraseDiff
   onClose: () => void
+  onCommit?: () => Promise<void>
 }) {
   const pending = diff.inserts.length + diff.updates.length
+  const [committing, setCommitting] = useState(false)
+  const canCommit = pending > 0 && diff.invalid.length === 0 && onCommit != null
+
+  const commit = async () => {
+    if (!canCommit || committing) return
+    const confirmed = await Dialog.confirm({
+      title: "提交到万象？",
+      message: `将新增 ${diff.inserts.length} 条、更新 ${diff.updates.length} 条权重。提交前会备份原文件；不会删除仅外部存在的词条，也不会改 userdb / gram / 官方 dicts。`,
+      confirmLabel: "提交",
+      cancelLabel: "取消",
+    })
+    if (!confirmed) return
+    setCommitting(true)
+    try {
+      await onCommit()
+    } catch (error) {
+      await Dialog.alert({ title: "提交失败", message: String(error) })
+    } finally {
+      setCommitting(false)
+    }
+  }
+
   return (
     <NavigationStack>
       <List
@@ -1792,9 +1963,16 @@ function PhraseDiffSheet({
         listStyle="insetGrouped"
         toolbar={{
           cancellationAction: <Button title="关闭" action={onClose} />,
+          confirmationAction: canCommit
+            ? <Button title={committing ? "提交中…" : "提交"} disabled={committing} action={commit} />
+            : undefined,
         }}
       >
-        <Section footer={<Text>本次只预览，不会写入 custom_phrase.txt，也不会改 userdb / gram / 官方 dicts。</Text>}>
+        <Section footer={<Text>
+          {canCommit
+            ? "确认后才会写入 custom_phrase.txt。提交前会备份，并再次核对文件哈希。"
+            : "当前没有可提交差异，或外部文件有异常行。"}
+        </Text>}>
           <HStack>
             <Text>待新增</Text>
             <Spacer />
@@ -2084,6 +2262,7 @@ function LexiconScreen() {
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<LexiconEntry | null>(null)
   const [diff, setDiff] = useState<PhraseDiff | null>(null)
+  const [diffWorkspace, setDiffWorkspace] = useState<Workspace | null>(null)
   const [previewing, setPreviewing] = useState(false)
 
   const reload = () => {
@@ -2132,6 +2311,7 @@ function LexiconScreen() {
         return
       }
       setDiff(next)
+      setDiffWorkspace(workspace)
     } catch (e) {
       await Dialog.alert({ title: "无法预览差异", message: String(e) })
     } finally {
@@ -2172,8 +2352,32 @@ function LexiconScreen() {
             : diff != null
               ? {
                   isPresented: true,
-                  onChanged: presented => { if (!presented) setDiff(null) },
-                  content: <PhraseDiffSheet diff={diff} onClose={() => setDiff(null)} />,
+                  onChanged: presented => {
+                    if (!presented) {
+                      setDiff(null)
+                      setDiffWorkspace(null)
+                    }
+                  },
+                  content: (
+                    <PhraseDiffSheet
+                      diff={diff}
+                      onClose={() => {
+                        setDiff(null)
+                        setDiffWorkspace(null)
+                      }}
+                      onCommit={async () => {
+                        if (diffWorkspace == null) throw new Error("没有可提交的工作区")
+                        const allEntries = await listLexiconEntries("")
+                        const result = await commitCustomPhraseDiff(diffWorkspace, allEntries, diff.hash)
+                        await Dialog.alert({
+                          title: "已提交",
+                          message: `新增 ${result.inserted} 条，更新 ${result.updated} 条。备份目录：ToolboxBackups`,
+                        })
+                        setDiff(null)
+                        setDiffWorkspace(null)
+                      }}
+                    />
+                  ),
                 }
               : undefined
         }
