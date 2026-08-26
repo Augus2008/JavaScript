@@ -19,6 +19,7 @@ import type { LexiconEntry, Workspace } from "../../models/types"
 import {
   countLexiconEntries,
   deleteLexiconEntry,
+  importExternalPhrases,
   listLexiconEntries,
   listWorkspaces,
   removeWorkspace,
@@ -349,13 +350,32 @@ export function LexiconScreen() {
                         setDiff(null)
                         setDiffWorkspace(null)
                       }}
+                      onImportExternal={async () => {
+                        if (diffWorkspace == null) throw new Error("没有可导入的工作区")
+                        const result = await importExternalPhrases(
+                          diff.externalOnly.map(item => ({
+                            text: item.text,
+                            code: item.code,
+                            weight: item.externalWeight,
+                            workspaceId: diffWorkspace.id,
+                          })),
+                        )
+                        await Dialog.alert({
+                          title: "已导入内部词库",
+                          message: `导入 ${result.imported} 条，跳过 ${result.skipped} 条已存在词条。没有改 custom_phrase.txt。`,
+                        })
+                        const allEntries = await listLexiconEntries("")
+                        const next = await previewCustomPhraseDiff(diffWorkspace, allEntries)
+                        setDiff(next)
+                        reload()
+                      }}
                     />
                   ),
                 }
               : undefined
         }
       >
-        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览 custom_phrase.txt 差异；这一版不会写入外部文件。</Text>}>
+        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览差异：提交写回万象，导入只进入内部词库。</Text>}>
           <Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />
           {workspaces.map(workspace => (
             <WorkspaceRow

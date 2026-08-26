@@ -271,4 +271,58 @@ export async function deleteLexiconEntry(id: string) {
   await db.execute("DELETE FROM lexicon_entries WHERE id = ?", [id])
 }
 
+export async function findLexiconEntryByTextCode(text: string, code: string) {
+  const rows = await db.fetchAll<LexiconEntry>(
+    "SELECT * FROM lexicon_entries WHERE text = ? AND IFNULL(code, '') = ? LIMIT 1",
+    [text, code],
+  )
+  return rows[0] ?? null
+}
+
+export type ExternalPhraseImport = {
+  text: string
+  code: string
+  weight: number | null
+  workspaceId: string
+}
+
+export type PhraseImportResult = {
+  imported: number
+  skipped: number
+}
+
+export async function importExternalPhrases(items: ExternalPhraseImport[]): Promise<PhraseImportResult> {
+  let imported = 0
+  let skipped = 0
+  for (const item of items) {
+    const code = item.code.trim()
+    const text = item.text.trim()
+    if (!text || !code) {
+      skipped += 1
+      continue
+    }
+    const existing = await findLexiconEntryByTextCode(text, code)
+    if (existing != null) {
+      skipped += 1
+      continue
+    }
+    const now = Date.now()
+    await upsertLexiconEntry({
+      id: UUID.string(),
+      text,
+      code,
+      weight: item.weight ?? 10,
+      category: null,
+      note: null,
+      source: "workspace",
+      workspace_id: item.workspaceId,
+      external_key: `${text}\u0000${code}`,
+      created_at: now,
+      updated_at: now,
+    })
+    imported += 1
+  }
+  return { imported, skipped }
+}
+
 export { db }

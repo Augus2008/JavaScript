@@ -24,14 +24,18 @@ export function PhraseDiffSheet({
   diff,
   onClose,
   onCommit,
+  onImportExternal,
 }: {
   diff: PhraseDiff
   onClose: () => void
   onCommit?: () => Promise<void>
+  onImportExternal?: () => Promise<void>
 }) {
   const pending = diff.inserts.length + diff.updates.length
   const [committing, setCommitting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const canCommit = pending > 0 && diff.invalid.length === 0 && onCommit != null
+  const canImport = diff.externalOnly.length > 0 && onImportExternal != null && !committing
 
   const commit = async () => {
     if (!canCommit || committing) return
@@ -49,6 +53,25 @@ export function PhraseDiffSheet({
       await Dialog.alert({ title: "提交失败", message: String(error) })
     } finally {
       setCommitting(false)
+    }
+  }
+
+  const importExternal = async () => {
+    if (!canImport || importing) return
+    const confirmed = await Dialog.confirm({
+      title: "导入到内部词库？",
+      message: `将导入 ${diff.externalOnly.length} 条仅外部存在的词条。相同词语+编码不会覆盖；这次不会改 custom_phrase.txt。`,
+      confirmLabel: "导入",
+      cancelLabel: "取消",
+    })
+    if (!confirmed) return
+    setImporting(true)
+    try {
+      await onImportExternal()
+    } catch (error) {
+      await Dialog.alert({ title: "导入失败", message: String(error) })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -130,7 +153,18 @@ export function PhraseDiffSheet({
           </Section>
         )}
         {diff.externalOnly.length > 0 && (
-          <Section header={<Text>仅外部存在</Text>} footer={<Text>工具箱不会删除这些现有词条。</Text>}>
+          <Section
+            header={<Text>仅外部存在</Text>}
+            footer={<Text>这些词条只在万象文件里。导入后进入内部词库，不会覆盖已有相同词语+编码，也不会改外部文件。</Text>}
+          >
+            {canImport && (
+              <Button
+                title={importing ? "导入中…" : `导入这 ${diff.externalOnly.length} 条`}
+                systemImage="square.and.arrow.down"
+                disabled={importing}
+                action={importExternal}
+              />
+            )}
             {diff.externalOnly.slice(0, 30).map(item => (
               <DiffRow
                 key={`external-${item.key}`}

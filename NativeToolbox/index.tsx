@@ -703,6 +703,60 @@ async function upsertLexiconEntry(entry: LexiconEntry) {
 async function deleteLexiconEntry(id: string) {
   await db.execute("DELETE FROM lexicon_entries WHERE id = ?", [id])
 }
+
+async function findLexiconEntryByTextCode(text: string, code: string) {
+  const rows = await db.fetchAll<LexiconEntry>(
+    "SELECT * FROM lexicon_entries WHERE text = ? AND IFNULL(code, '') = ? LIMIT 1",
+    [text, code],
+  )
+  return rows[0] ?? null
+}
+
+type ExternalPhraseImport = {
+  text: string
+  code: string
+  weight: number | null
+  workspaceId: string
+}
+
+type PhraseImportResult = {
+  imported: number
+  skipped: number
+}
+
+async function importExternalPhrases(items: ExternalPhraseImport[]): Promise<PhraseImportResult> {
+  let imported = 0
+  let skipped = 0
+  for (const item of items) {
+    const code = item.code.trim()
+    const text = item.text.trim()
+    if (!text || !code) {
+      skipped += 1
+      continue
+    }
+    const existing = await findLexiconEntryByTextCode(text, code)
+    if (existing != null) {
+      skipped += 1
+      continue
+    }
+    const now = Date.now()
+    await upsertLexiconEntry({
+      id: UUID.string(),
+      text,
+      code,
+      weight: item.weight ?? 10,
+      category: null,
+      note: null,
+      source: "workspace",
+      workspace_id: item.workspaceId,
+      external_key: `${text}\u0000${code}`,
+      created_at: now,
+      updated_at: now,
+    })
+    imported += 1
+  }
+  return { imported, skipped }
+}
 // ---- services/pasteboard.ts ----
 const DEFAULT_SETTINGS: AppSettings = {
   captureText: true,
@@ -1927,14 +1981,18 @@ function PhraseDiffSheet({
   diff,
   onClose,
   onCommit,
+  onImportExternal,
 }: {
   diff: PhraseDiff
   onClose: () => void
   onCommit?: () => Promise<void>
+  onImportExternal?: () => Promise<void>
 }) {
   const pending = diff.inserts.length + diff.updates.length
   const [committing, setCommitting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const canCommit = pending > 0 && diff.invalid.length === 0 && onCommit != null
+  const canImport = diff.externalOnly.length > 0 && onImportExternal != null && !committing
 
   const commit = async () => {
     if (!canCommit || committing) return
@@ -1952,6 +2010,25 @@ function PhraseDiffSheet({
       await Dialog.alert({ title: "提交失败", message: String(error) })
     } finally {
       setCommitting(false)
+    }
+  }
+
+  const importExternal = async () => {
+    if (!canImport || importing) return
+    const confirmed = await Dialog.confirm({
+      title: "导入到内部词库？",
+      message: `将导入 ${diff.externalOnly.length} 条仅外部存在的词条。相同词语+编码不会覆盖；这次不会改 custom_phrase.txt。`,
+      confirmLabel: "导入",
+      cancelLabel: "取消",
+    })
+    if (!confirmed) return
+    setImporting(true)
+    try {
+      await onImportExternal()
+    } catch (error) {
+      await Dialog.alert({ title: "导入失败", message: String(error) })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -2033,7 +2110,18 @@ function PhraseDiffSheet({
           </Section>
         )}
         {diff.externalOnly.length > 0 && (
-          <Section header={<Text>仅外部存在</Text>} footer={<Text>工具箱不会删除这些现有词条。</Text>}>
+          <Section
+            header={<Text>仅外部存在</Text>}
+            footer={<Text>这些词条只在万象文件里。导入后进入内部词库，不会覆盖已有相同词语+编码，也不会改外部文件。</Text>}
+          >
+            {canImport && (
+              <Button
+                title={importing ? "导入中…" : `导入这 ${diff.externalOnly.length} 条`}
+                systemImage="square.and.arrow.down"
+                disabled={importing}
+                action={importExternal}
+              />
+            )}
             {diff.externalOnly.slice(0, 30).map(item => (
               <DiffRow
                 key={`external-${item.key}`}
@@ -2376,13 +2464,32 @@ function LexiconScreen() {
                         setDiff(null)
                         setDiffWorkspace(null)
                       }}
+                      onImportExternal={async () => {
+                        if (diffWorkspace == null) throw new Error("没有可导入的工作区")
+                        const result = await importExternalPhrases(
+                          diff.externalOnly.map(item => ({
+                            text: item.text,
+                            code: item.code,
+                            weight: item.externalWeight,
+                            workspaceId: diffWorkspace.id,
+                          })),
+                        )
+                        await Dialog.alert({
+                          title: "已导入内部词库",
+                          message: `导入 ${result.imported} 条，跳过 ${result.skipped} 条已存在词条。没有改 custom_phrase.txt。`,
+                        })
+                        const allEntries = await listLexiconEntries("")
+                        const next = await previewCustomPhraseDiff(diffWorkspace, allEntries)
+                        setDiff(next)
+                        reload()
+                      }}
                     />
                   ),
                 }
               : undefined
         }
       >
-        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览 custom_phrase.txt 差异；这一版不会写入外部文件。</Text>}>
+        <Section header={<Text>工作区</Text>} footer={<Text>点已连接的万象目录可预览差异：提交写回万象，导入只进入内部词库。</Text>}>
           <Button title="连接外部目录" systemImage="folder.badge.plus" action={connect} />
           {workspaces.map(workspace => (
             <WorkspaceRow
