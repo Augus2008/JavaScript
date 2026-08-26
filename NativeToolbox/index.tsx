@@ -1580,6 +1580,65 @@ function TextLabScreen() {
     </NavigationStack>
   )
 }
+// ---- services/workspace-bookmarks.ts ----
+function hashText(text: string) {
+  const data = Data.fromRawString(text)
+  if (data == null) throw new Error("文件不是有效 UTF-8 文本")
+  return Crypto.sha256(data).toHexString()
+}
+
+function basename(path: string) {
+  return path.split("/").filter(Boolean).pop() ?? "工作区"
+}
+
+async function chooseAndConnectWorkspace() {
+  const result = await DocumentPicker.pickDirectoryBookmark({
+    preferredName: "NativeToolbox Wanxiang",
+  })
+  if (result == null) return null
+
+  const root = FileManager.bookmarkedPath(result.bookmarkName)
+  if (root == null) throw new Error("目录授权已保存，但无法恢复访问路径")
+
+  const schemaPath = Path.join(root, "wanxiang.schema.yaml")
+  const versionPath = Path.join(root, "version.txt")
+  const isWanxiang = await FileManager.exists(schemaPath)
+  const version = await FileManager.exists(versionPath)
+    ? (await FileManager.readAsString(versionPath)).trim()
+    : null
+  const schemaText = isWanxiang ? await FileManager.readAsString(schemaPath) : ""
+
+  const existing = await findWorkspaceByBookmark(result.bookmarkName)
+  const workspace: Workspace = {
+    id: existing?.id ?? UUID.string(),
+    type: isWanxiang ? "wanxiang" : "generic",
+    name: isWanxiang ? "万象拼音" : basename(root),
+    bookmark_name: result.bookmarkName,
+    display_path: root,
+    version,
+    last_seen_hash: isWanxiang ? hashText(schemaText) : null,
+    last_checked_at: Date.now(),
+    status: "connected",
+  }
+  await upsertWorkspace(workspace)
+  return workspace
+}
+
+async function refreshWorkspace(workspace: Workspace) {
+  const root = FileManager.bookmarkedPath(workspace.bookmark_name)
+  if (root == null) {
+    return { ...workspace, status: "unavailable" as const, last_checked_at: Date.now() }
+  }
+  const schemaPath = Path.join(root, "wanxiang.schema.yaml")
+  if (workspace.type === "wanxiang" && !(await FileManager.exists(schemaPath))) {
+    return { ...workspace, status: "unavailable" as const, last_checked_at: Date.now() }
+  }
+  const versionPath = Path.join(root, "version.txt")
+  const version = await FileManager.exists(versionPath)
+    ? (await FileManager.readAsString(versionPath)).trim()
+    : null
+  return { ...workspace, display_path: root, version, status: "connected" as const, last_checked_at: Date.now() }
+}
 // ---- adapters/wanxiang/custom-phrase.ts ----
 type PhraseKind = "comment" | "blank" | "entry" | "invalid"
 
@@ -1843,65 +1902,6 @@ function applyCustomPhraseDiff(original: string, diff: PhraseDiff) {
   if (diff.inserts.length === 0) return `${body}\n`
   return `${body}\n\n${managed.join("\n")}\n`
 }
-// ---- services/workspace-bookmarks.ts ----
-function hashText(text: string) {
-  const data = Data.fromRawString(text)
-  if (data == null) throw new Error("文件不是有效 UTF-8 文本")
-  return Crypto.sha256(data).toHexString()
-}
-
-function basename(path: string) {
-  return path.split("/").filter(Boolean).pop() ?? "工作区"
-}
-
-async function chooseAndConnectWorkspace() {
-  const result = await DocumentPicker.pickDirectoryBookmark({
-    preferredName: "NativeToolbox Wanxiang",
-  })
-  if (result == null) return null
-
-  const root = FileManager.bookmarkedPath(result.bookmarkName)
-  if (root == null) throw new Error("目录授权已保存，但无法恢复访问路径")
-
-  const schemaPath = Path.join(root, "wanxiang.schema.yaml")
-  const versionPath = Path.join(root, "version.txt")
-  const isWanxiang = await FileManager.exists(schemaPath)
-  const version = await FileManager.exists(versionPath)
-    ? (await FileManager.readAsString(versionPath)).trim()
-    : null
-  const schemaText = isWanxiang ? await FileManager.readAsString(schemaPath) : ""
-
-  const existing = await findWorkspaceByBookmark(result.bookmarkName)
-  const workspace: Workspace = {
-    id: existing?.id ?? UUID.string(),
-    type: isWanxiang ? "wanxiang" : "generic",
-    name: isWanxiang ? "万象拼音" : basename(root),
-    bookmark_name: result.bookmarkName,
-    display_path: root,
-    version,
-    last_seen_hash: isWanxiang ? hashText(schemaText) : null,
-    last_checked_at: Date.now(),
-    status: "connected",
-  }
-  await upsertWorkspace(workspace)
-  return workspace
-}
-
-async function refreshWorkspace(workspace: Workspace) {
-  const root = FileManager.bookmarkedPath(workspace.bookmark_name)
-  if (root == null) {
-    return { ...workspace, status: "unavailable" as const, last_checked_at: Date.now() }
-  }
-  const schemaPath = Path.join(root, "wanxiang.schema.yaml")
-  if (workspace.type === "wanxiang" && !(await FileManager.exists(schemaPath))) {
-    return { ...workspace, status: "unavailable" as const, last_checked_at: Date.now() }
-  }
-  const versionPath = Path.join(root, "version.txt")
-  const version = await FileManager.exists(versionPath)
-    ? (await FileManager.readAsString(versionPath)).trim()
-    : null
-  return { ...workspace, display_path: root, version, status: "connected" as const, last_checked_at: Date.now() }
-}
 // ---- services/wanxiang-preview.ts ----
 function timestampName() {
   const d = new Date()
@@ -2029,21 +2029,21 @@ function DiffRow({ item, detail }: { item: PhraseDiffItem; detail: string }) {
 }
 
 function PhraseDiffSheet({
-  diff,
-  onClose,
-  onCommit,
-  onImportExternal,
+  diff: initialDiff,
+  workspace,
+  onReload,
 }: {
   diff: PhraseDiff
-  onClose: () => void
-  onCommit?: () => Promise<void>
-  onImportExternal?: () => Promise<void>
+  workspace: Workspace
+  onReload: () => void
 }) {
-  const pending = diff.inserts.length + diff.updates.length
+  const dismiss = Navigation.useDismiss()
+  const [diff, setDiff] = useState(initialDiff)
   const [committing, setCommitting] = useState(false)
   const [importing, setImporting] = useState(false)
-  const canCommit = pending > 0 && diff.invalid.length === 0 && onCommit != null
-  const canImport = diff.externalOnly.length > 0 && onImportExternal != null && !committing
+  const pending = diff.inserts.length + diff.updates.length
+  const canCommit = pending > 0 && diff.invalid.length === 0
+  const canImport = diff.externalOnly.length > 0 && !committing
 
   const commit = async () => {
     if (!canCommit || committing) return
@@ -2056,7 +2056,14 @@ function PhraseDiffSheet({
     if (!confirmed) return
     setCommitting(true)
     try {
-      await onCommit()
+      const allEntries = await listLexiconEntries("")
+      const result = await commitCustomPhraseDiff(workspace, allEntries, diff.hash)
+      await Dialog.alert({
+        title: "已提交",
+        message: `新增 ${result.inserted} 条，更新 ${result.updated} 条。备份目录：ToolboxBackups`,
+      })
+      onReload()
+      dismiss()
     } catch (error) {
       await Dialog.alert({ title: "提交失败", message: String(error) })
     } finally {
@@ -2075,7 +2082,21 @@ function PhraseDiffSheet({
     if (!confirmed) return
     setImporting(true)
     try {
-      await onImportExternal()
+      const result = await importExternalPhrases(
+        diff.externalOnly.map(item => ({
+          text: item.text,
+          code: item.code,
+          weight: item.externalWeight,
+          workspaceId: workspace.id,
+        })),
+      )
+      await Dialog.alert({
+        title: "已导入内部词库",
+        message: `导入 ${result.imported} 条，跳过 ${result.skipped} 条已存在词条。没有改 custom_phrase.txt。`,
+      })
+      const allEntries = await listLexiconEntries("")
+      setDiff(await previewCustomPhraseDiff(workspace, allEntries))
+      onReload()
     } catch (error) {
       await Dialog.alert({ title: "导入失败", message: String(error) })
     } finally {
@@ -2090,7 +2111,7 @@ function PhraseDiffSheet({
         navigationBarTitleDisplayMode="inline"
         listStyle="insetGrouped"
         toolbar={{
-          topBarLeading: <Button title="完成" action={onClose} />,
+          cancellationAction: <Button title="完成" action={dismiss} />,
           confirmationAction: canCommit
             ? <Button title={committing ? "提交中…" : "提交"} disabled={committing} action={commit} />
             : undefined,
@@ -2400,8 +2421,6 @@ function LexiconScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<LexiconEntry | null>(null)
-  const [diff, setDiff] = useState<PhraseDiff | null>(null)
-  const [diffWorkspace, setDiffWorkspace] = useState<Workspace | null>(null)
   const [previewing, setPreviewing] = useState(false)
 
   const reload = () => {
@@ -2449,8 +2468,16 @@ function LexiconScreen() {
         })
         return
       }
-      setDiff(next)
-      setDiffWorkspace(workspace)
+      await Navigation.present({
+        element: (
+          <PhraseDiffSheet
+            diff={next}
+            workspace={workspace}
+            onReload={reload}
+          />
+        ),
+      })
+      reload()
     } catch (e) {
       await Dialog.alert({ title: "无法预览差异", message: String(e) })
     } finally {
@@ -2469,77 +2496,23 @@ function LexiconScreen() {
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
         overlay={overlay}
-        toolbar={editor != null || diff != null ? undefined : {
-          primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
+        toolbar={{
           topBarTrailing: <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />,
         }}
-        sheet={
-          editor != null
-            ? {
-                isPresented: true,
-                onChanged: presented => { if (!presented) setEditor(null) },
-                content: (
-                  <LexiconEditor
-                    key={editor.id}
-                    entry={editor}
-                    onClose={saved => {
-                      setEditor(null)
-                      if (saved) reload()
-                    }}
-                  />
-                ),
-              }
-            : diff != null
-              ? {
-                  isPresented: true,
-                  onChanged: presented => {
-                    if (!presented) {
-                      setDiff(null)
-                      setDiffWorkspace(null)
-                    }
-                  },
-                  content: (
-                    <PhraseDiffSheet
-                      diff={diff}
-                      onClose={() => {
-                        setDiff(null)
-                        setDiffWorkspace(null)
-                      }}
-                      onCommit={async () => {
-                        if (diffWorkspace == null) throw new Error("没有可提交的工作区")
-                        const allEntries = await listLexiconEntries("")
-                        const result = await commitCustomPhraseDiff(diffWorkspace, allEntries, diff.hash)
-                        await Dialog.alert({
-                          title: "已提交",
-                          message: `新增 ${result.inserted} 条，更新 ${result.updated} 条。备份目录：ToolboxBackups`,
-                        })
-                        setDiff(null)
-                        setDiffWorkspace(null)
-                      }}
-                      onImportExternal={async () => {
-                        if (diffWorkspace == null) throw new Error("没有可导入的工作区")
-                        const result = await importExternalPhrases(
-                          diff.externalOnly.map(item => ({
-                            text: item.text,
-                            code: item.code,
-                            weight: item.externalWeight,
-                            workspaceId: diffWorkspace.id,
-                          })),
-                        )
-                        await Dialog.alert({
-                          title: "已导入内部词库",
-                          message: `导入 ${result.imported} 条，跳过 ${result.skipped} 条已存在词条。没有改 custom_phrase.txt。`,
-                        })
-                        const allEntries = await listLexiconEntries("")
-                        const next = await previewCustomPhraseDiff(diffWorkspace, allEntries)
-                        setDiff(next)
-                        reload()
-                      }}
-                    />
-                  ),
-                }
-              : undefined
-        }
+        sheet={editor == null ? undefined : {
+          isPresented: true,
+          onChanged: presented => { if (!presented) setEditor(null) },
+          content: (
+            <LexiconEditor
+              key={editor.id}
+              entry={editor}
+              onClose={saved => {
+                setEditor(null)
+                if (saved) reload()
+              }}
+            />
+          ),
+        }}
       >
         {workspaces.length > 0 && (
           <Section header={<Text>工作区</Text>} footer={<Text>点万象目录预览差异。提交写回万象，导入只进内部词库。</Text>}>
@@ -2560,6 +2533,7 @@ function LexiconScreen() {
             onChanged={setQuery}
             prompt="词语、编码或备注"
           />
+          <Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />
         </Section>
         <Section
           header={<Text>内部词库</Text>}
@@ -2569,7 +2543,7 @@ function LexiconScreen() {
             <VStack alignment="leading" spacing={6} padding={{ top: 4, bottom: 8 }}>
               <Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>
               <Text font="caption" foregroundColor="secondary">
-                右上角新建，或从万象差异里导入仅外部存在的词条。
+                点上方新建，或从万象差异里导入仅外部存在的词条。
               </Text>
             </VStack>
           ) : entries.map(entry => (

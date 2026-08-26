@@ -2,6 +2,7 @@ import {
   Button,
   HStack,
   List,
+  Navigation,
   NavigationStack,
   Section,
   Spacer,
@@ -10,6 +11,9 @@ import {
   useState,
 } from "scripting"
 import type { PhraseDiff, PhraseDiffItem } from "../../adapters/wanxiang/custom-phrase"
+import type { Workspace } from "../../models/types"
+import { importExternalPhrases, listLexiconEntries } from "../../services/database"
+import { commitCustomPhraseDiff, previewCustomPhraseDiff } from "../../services/wanxiang-preview"
 
 function DiffRow({ item, detail }: { item: PhraseDiffItem; detail: string }) {
   return (
@@ -21,21 +25,21 @@ function DiffRow({ item, detail }: { item: PhraseDiffItem; detail: string }) {
 }
 
 export function PhraseDiffSheet({
-  diff,
-  onClose,
-  onCommit,
-  onImportExternal,
+  diff: initialDiff,
+  workspace,
+  onReload,
 }: {
   diff: PhraseDiff
-  onClose: () => void
-  onCommit?: () => Promise<void>
-  onImportExternal?: () => Promise<void>
+  workspace: Workspace
+  onReload: () => void
 }) {
-  const pending = diff.inserts.length + diff.updates.length
+  const dismiss = Navigation.useDismiss()
+  const [diff, setDiff] = useState(initialDiff)
   const [committing, setCommitting] = useState(false)
   const [importing, setImporting] = useState(false)
-  const canCommit = pending > 0 && diff.invalid.length === 0 && onCommit != null
-  const canImport = diff.externalOnly.length > 0 && onImportExternal != null && !committing
+  const pending = diff.inserts.length + diff.updates.length
+  const canCommit = pending > 0 && diff.invalid.length === 0
+  const canImport = diff.externalOnly.length > 0 && !committing
 
   const commit = async () => {
     if (!canCommit || committing) return
@@ -48,7 +52,14 @@ export function PhraseDiffSheet({
     if (!confirmed) return
     setCommitting(true)
     try {
-      await onCommit()
+      const allEntries = await listLexiconEntries("")
+      const result = await commitCustomPhraseDiff(workspace, allEntries, diff.hash)
+      await Dialog.alert({
+        title: "已提交",
+        message: `新增 ${result.inserted} 条，更新 ${result.updated} 条。备份目录：ToolboxBackups`,
+      })
+      onReload()
+      dismiss()
     } catch (error) {
       await Dialog.alert({ title: "提交失败", message: String(error) })
     } finally {
@@ -67,7 +78,21 @@ export function PhraseDiffSheet({
     if (!confirmed) return
     setImporting(true)
     try {
-      await onImportExternal()
+      const result = await importExternalPhrases(
+        diff.externalOnly.map(item => ({
+          text: item.text,
+          code: item.code,
+          weight: item.externalWeight,
+          workspaceId: workspace.id,
+        })),
+      )
+      await Dialog.alert({
+        title: "已导入内部词库",
+        message: `导入 ${result.imported} 条，跳过 ${result.skipped} 条已存在词条。没有改 custom_phrase.txt。`,
+      })
+      const allEntries = await listLexiconEntries("")
+      setDiff(await previewCustomPhraseDiff(workspace, allEntries))
+      onReload()
     } catch (error) {
       await Dialog.alert({ title: "导入失败", message: String(error) })
     } finally {
@@ -82,7 +107,7 @@ export function PhraseDiffSheet({
         navigationBarTitleDisplayMode="inline"
         listStyle="insetGrouped"
         toolbar={{
-          topBarLeading: <Button title="完成" action={onClose} />,
+          cancellationAction: <Button title="完成" action={dismiss} />,
           confirmationAction: canCommit
             ? <Button title={committing ? "提交中…" : "提交"} disabled={committing} action={commit} />
             : undefined,

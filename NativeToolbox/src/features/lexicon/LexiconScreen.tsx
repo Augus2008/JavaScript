@@ -4,6 +4,7 @@ import {
   HStack,
   Image,
   List,
+  Navigation,
   NavigationStack,
   Section,
   Spacer,
@@ -14,12 +15,10 @@ import {
   useEffect,
   useState,
 } from "scripting"
-import type { PhraseDiff } from "../../adapters/wanxiang/custom-phrase"
 import type { LexiconEntry, Workspace } from "../../models/types"
 import {
   countLexiconEntries,
   deleteLexiconEntry,
-  importExternalPhrases,
   listLexiconEntries,
   listWorkspaces,
   removeWorkspace,
@@ -27,7 +26,7 @@ import {
   upsertWorkspace,
 } from "../../services/database"
 import { chooseAndConnectWorkspace, refreshWorkspace } from "../../services/workspace-bookmarks"
-import { commitCustomPhraseDiff, previewCustomPhraseDiff } from "../../services/wanxiang-preview"
+import { previewCustomPhraseDiff } from "../../services/wanxiang-preview"
 import { PhraseDiffSheet } from "./PhraseDiffSheet"
 
 function emptyEntry(): LexiconEntry {
@@ -235,8 +234,6 @@ export function LexiconScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<LexiconEntry | null>(null)
-  const [diff, setDiff] = useState<PhraseDiff | null>(null)
-  const [diffWorkspace, setDiffWorkspace] = useState<Workspace | null>(null)
   const [previewing, setPreviewing] = useState(false)
 
   const reload = () => {
@@ -284,8 +281,16 @@ export function LexiconScreen() {
         })
         return
       }
-      setDiff(next)
-      setDiffWorkspace(workspace)
+      await Navigation.present({
+        element: (
+          <PhraseDiffSheet
+            diff={next}
+            workspace={workspace}
+            onReload={reload}
+          />
+        ),
+      })
+      reload()
     } catch (e) {
       await Dialog.alert({ title: "无法预览差异", message: String(e) })
     } finally {
@@ -304,77 +309,23 @@ export function LexiconScreen() {
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
         overlay={overlay}
-        toolbar={editor != null || diff != null ? undefined : {
-          primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
+        toolbar={{
           topBarTrailing: <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />,
         }}
-        sheet={
-          editor != null
-            ? {
-                isPresented: true,
-                onChanged: presented => { if (!presented) setEditor(null) },
-                content: (
-                  <LexiconEditor
-                    key={editor.id}
-                    entry={editor}
-                    onClose={saved => {
-                      setEditor(null)
-                      if (saved) reload()
-                    }}
-                  />
-                ),
-              }
-            : diff != null
-              ? {
-                  isPresented: true,
-                  onChanged: presented => {
-                    if (!presented) {
-                      setDiff(null)
-                      setDiffWorkspace(null)
-                    }
-                  },
-                  content: (
-                    <PhraseDiffSheet
-                      diff={diff}
-                      onClose={() => {
-                        setDiff(null)
-                        setDiffWorkspace(null)
-                      }}
-                      onCommit={async () => {
-                        if (diffWorkspace == null) throw new Error("没有可提交的工作区")
-                        const allEntries = await listLexiconEntries("")
-                        const result = await commitCustomPhraseDiff(diffWorkspace, allEntries, diff.hash)
-                        await Dialog.alert({
-                          title: "已提交",
-                          message: `新增 ${result.inserted} 条，更新 ${result.updated} 条。备份目录：ToolboxBackups`,
-                        })
-                        setDiff(null)
-                        setDiffWorkspace(null)
-                      }}
-                      onImportExternal={async () => {
-                        if (diffWorkspace == null) throw new Error("没有可导入的工作区")
-                        const result = await importExternalPhrases(
-                          diff.externalOnly.map(item => ({
-                            text: item.text,
-                            code: item.code,
-                            weight: item.externalWeight,
-                            workspaceId: diffWorkspace.id,
-                          })),
-                        )
-                        await Dialog.alert({
-                          title: "已导入内部词库",
-                          message: `导入 ${result.imported} 条，跳过 ${result.skipped} 条已存在词条。没有改 custom_phrase.txt。`,
-                        })
-                        const allEntries = await listLexiconEntries("")
-                        const next = await previewCustomPhraseDiff(diffWorkspace, allEntries)
-                        setDiff(next)
-                        reload()
-                      }}
-                    />
-                  ),
-                }
-              : undefined
-        }
+        sheet={editor == null ? undefined : {
+          isPresented: true,
+          onChanged: presented => { if (!presented) setEditor(null) },
+          content: (
+            <LexiconEditor
+              key={editor.id}
+              entry={editor}
+              onClose={saved => {
+                setEditor(null)
+                if (saved) reload()
+              }}
+            />
+          ),
+        }}
       >
         {workspaces.length > 0 && (
           <Section header={<Text>工作区</Text>} footer={<Text>点万象目录预览差异。提交写回万象，导入只进内部词库。</Text>}>
@@ -395,6 +346,7 @@ export function LexiconScreen() {
             onChanged={setQuery}
             prompt="词语、编码或备注"
           />
+          <Button title="新建词条" systemImage="plus" action={() => setEditor(emptyEntry())} />
         </Section>
         <Section
           header={<Text>内部词库</Text>}
@@ -404,7 +356,7 @@ export function LexiconScreen() {
             <VStack alignment="leading" spacing={6} padding={{ top: 4, bottom: 8 }}>
               <Text>{query ? "没有匹配的词条" : "还没有内部词条"}</Text>
               <Text font="caption" foregroundColor="secondary">
-                右上角新建，或从万象差异里导入仅外部存在的词条。
+                点上方新建，或从万象差异里导入仅外部存在的词条。
               </Text>
             </VStack>
           ) : entries.map(entry => (
