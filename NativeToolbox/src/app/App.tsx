@@ -18,7 +18,7 @@ export function App() {
       <Tab title="常用语" systemImage="text.bubble.fill" value="snippets">
         <SnippetsScreen />
       </Tab>
-      <Tab title="文本" systemImage="textformat" value="text">
+      <Tab title="文本" systemImage="text.alignleft" value="text">
         <TextLabScreen />
       </Tab>
       <Tab title="词库" systemImage="books.vertical.fill" value="lexicon">

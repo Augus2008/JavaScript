@@ -67,6 +67,11 @@ export function TextLabScreen() {
             ? <Editor controller={inputController} scriptName="文本输入" showAccessoryView />
             : <Editor controller={resultController} scriptName="处理结果" showAccessoryView />}
         </VStack>
+        {mode === "input" && !(inputController.content ?? "").trim() && (
+          <Text font="caption" foregroundColor="secondary">
+            点上方编辑区输入或粘贴文字，再用下面的工具处理。
+          </Text>
+        )}
         {error != null && <Text foregroundColor="systemRed" font="caption">{error}</Text>}
         <ScrollView axis="horizontal" showsIndicators={false}>
           <HStack spacing={8}>

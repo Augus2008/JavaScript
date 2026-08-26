@@ -305,8 +305,12 @@ export function LexiconScreen() {
         listStyle="insetGrouped"
         overlay={overlay}
         toolbar={{
-          primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
-          topBarTrailing: <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />,
+          primaryAction: editor == null && diff == null
+            ? <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />
+            : undefined,
+          topBarTrailing: editor == null && diff == null
+            ? <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />
+            : undefined,
         }}
         sheet={
           editor != null

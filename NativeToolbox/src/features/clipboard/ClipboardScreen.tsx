@@ -98,6 +98,7 @@ export function ClipboardScreen() {
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
   const [loading, setLoading] = useState(true)
+  const [capturing, setCapturing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const reload = () => {
@@ -117,14 +118,23 @@ export function ClipboardScreen() {
   }, [])
 
   const capture = async () => {
-    setLoading(true)
+    if (capturing) return
+    setCapturing(true)
     setError(null)
     try {
-      await captureCurrentPasteboard(loadSettings())
+      const changed = await captureCurrentPasteboard(loadSettings())
       reload()
+      if (!changed) {
+        await Dialog.alert({
+          title: "没有新内容",
+          message: "系统剪贴板是空的，或这条已经在列表里。先复制一段文字再点采集。",
+        })
+      }
     } catch (e) {
+      await Dialog.alert({ title: "采集失败", message: String(e) })
       setError(String(e))
-      setLoading(false)
+    } finally {
+      setCapturing(false)
     }
   }
 
@@ -149,9 +159,9 @@ export function ClipboardScreen() {
         toolbar={{
           primaryAction: (
             <Button
-              title={loading ? "采集中" : "采集"}
-              systemImage="plus"
-              disabled={loading}
+              title={capturing ? "采集中" : "采集"}
+              systemImage="arrow.clockwise"
+              disabled={capturing}
               action={capture}
             />
           ),

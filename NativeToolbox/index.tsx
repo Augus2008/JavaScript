@@ -939,6 +939,7 @@ function ClipboardScreen() {
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
   const [loading, setLoading] = useState(true)
+  const [capturing, setCapturing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const reload = () => {
@@ -958,14 +959,23 @@ function ClipboardScreen() {
   }, [])
 
   const capture = async () => {
-    setLoading(true)
+    if (capturing) return
+    setCapturing(true)
     setError(null)
     try {
-      await captureCurrentPasteboard(loadSettings())
+      const changed = await captureCurrentPasteboard(loadSettings())
       reload()
+      if (!changed) {
+        await Dialog.alert({
+          title: "没有新内容",
+          message: "系统剪贴板是空的，或这条已经在列表里。先复制一段文字再点采集。",
+        })
+      }
     } catch (e) {
+      await Dialog.alert({ title: "采集失败", message: String(e) })
       setError(String(e))
-      setLoading(false)
+    } finally {
+      setCapturing(false)
     }
   }
 
@@ -990,9 +1000,9 @@ function ClipboardScreen() {
         toolbar={{
           primaryAction: (
             <Button
-              title={loading ? "采集中" : "采集"}
-              systemImage="plus"
-              disabled={loading}
+              title={capturing ? "采集中" : "采集"}
+              systemImage="arrow.clockwise"
+              disabled={capturing}
               action={capture}
             />
           ),
@@ -1522,6 +1532,11 @@ function TextLabScreen() {
             ? <Editor controller={inputController} scriptName="文本输入" showAccessoryView />
             : <Editor controller={resultController} scriptName="处理结果" showAccessoryView />}
         </VStack>
+        {mode === "input" && !(inputController.content ?? "").trim() && (
+          <Text font="caption" foregroundColor="secondary">
+            点上方编辑区输入或粘贴文字，再用下面的工具处理。
+          </Text>
+        )}
         {error != null && <Text foregroundColor="systemRed" font="caption">{error}</Text>}
         <ScrollView axis="horizontal" showsIndicators={false}>
           <HStack spacing={8}>
@@ -2427,8 +2442,12 @@ function LexiconScreen() {
         listStyle="insetGrouped"
         overlay={overlay}
         toolbar={{
-          primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />,
-          topBarTrailing: <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />,
+          primaryAction: editor == null && diff == null
+            ? <Button title="新建" systemImage="plus" action={() => setEditor(emptyEntry())} />
+            : undefined,
+          topBarTrailing: editor == null && diff == null
+            ? <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />
+            : undefined,
         }}
         sheet={
           editor != null
@@ -2620,7 +2639,7 @@ function App() {
       <Tab title="常用语" systemImage="text.bubble.fill" value="snippets">
         <SnippetsScreen />
       </Tab>
-      <Tab title="文本" systemImage="textformat" value="text">
+      <Tab title="文本" systemImage="text.alignleft" value="text">
         <TextLabScreen />
       </Tab>
       <Tab title="词库" systemImage="books.vertical.fill" value="lexicon">
