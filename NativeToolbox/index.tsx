@@ -1475,18 +1475,10 @@ function applyTextOperation(input: string, operation: TextOperation) {
   }
 }
 // ---- features/textlab/TextLabScreen.tsx ----
-const TOOLS: Array<{
-  id: TextOperation
-  title: string
-  detail: string
-  icon: string
-}> = [
-  { id: "trim", title: "清理首尾空白", detail: "去掉全文开头和结尾的空格、空行", icon: "text.trim" },
-  { id: "blankLines", title: "合并多余空行", detail: "连续多个空行压成一个", icon: "line.3.horizontal.decrease" },
-  { id: "removeEmpty", title: "删除空行", detail: "去掉所有空白行", icon: "minus.rectangle" },
-  { id: "dedupe", title: "行去重", detail: "重复行只留第一次出现的", icon: "square.on.square" },
-  { id: "sort", title: "按行排序", detail: "按中文顺序排列每一行", icon: "arrow.up.arrow.down" },
-  { id: "json", title: "格式化 JSON", detail: "把 JSON 整理成缩进文本", icon: "curlybraces" },
+const TOOL_ROWS: Array<[TextOperation, string, TextOperation, string]> = [
+  ["trim", "清理空白", "blankLines", "合并空行"],
+  ["removeEmpty", "删除空行", "dedupe", "行去重"],
+  ["sort", "按行排序", "json", "格式化 JSON"],
 ]
 
 function TextLabScreen() {
@@ -1577,20 +1569,23 @@ function TextLabScreen() {
             <Text foregroundColor="systemRed">{error}</Text>
           </Section>
         )}
-        <Section header={<Text>工具</Text>} footer={<Text>点按一项处理当前原文。</Text>}>
-          {TOOLS.map(tool => (
-            <HStack
-              key={tool.id}
-              spacing={12}
-              onTapGesture={() => run(tool.id)}
-            >
-              <Image systemName={tool.icon} foregroundColor="secondary" frame={{ width: 24 }} />
-              <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                <Text font="body">{tool.title}</Text>
-                <Text font="caption" foregroundColor="secondary">{tool.detail}</Text>
-              </VStack>
-              <Spacer />
-              <Image systemName="chevron.right" foregroundColor="tertiaryLabel" />
+        <Section header={<Text>工具</Text>} footer={<Text>处理完会自动切到结果，可继续复制或贴回原文。</Text>}>
+          {TOOL_ROWS.map((row, index) => (
+            <HStack key={`tool-row-${index}`} spacing={12}>
+              <Button
+                title={row[1]}
+                buttonStyle="borderedProminent"
+                buttonBorderShape={{ roundedRectangleRadius: 22 }}
+                frame={{ maxWidth: "infinity", minHeight: 46 }}
+                action={() => run(row[0])}
+              />
+              <Button
+                title={row[3]}
+                buttonStyle="bordered"
+                buttonBorderShape={{ roundedRectangleRadius: 22 }}
+                frame={{ maxWidth: "infinity", minHeight: 46 }}
+                action={() => run(row[2])}
+              />
             </HStack>
           ))}
         </Section>
