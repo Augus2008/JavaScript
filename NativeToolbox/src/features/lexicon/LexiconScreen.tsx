@@ -51,6 +51,28 @@ function preview(value: string | null) {
   return (value ?? "").replace(/\s+/g, " ").trim()
 }
 
+function WorkspaceIcon({
+  systemName,
+  color,
+}: {
+  systemName: string
+  color: string
+}) {
+  return (
+    <Image
+      systemName={systemName}
+      foregroundColor="white"
+      imageScale="small"
+      frame={{ width: 29, height: 29 }}
+      background={color}
+      clipShape={{
+        type: "rect",
+        cornerRadius: 6,
+      }}
+    />
+  )
+}
+
 function WorkspaceRow({
   workspace,
   reload,
@@ -61,9 +83,16 @@ function WorkspaceRow({
   onPreview: () => void
 }) {
   const connected = workspace.status === "connected"
+  const canPreview = connected && workspace.type === "wanxiang"
+  const subtitle = !connected
+    ? "需重新授权"
+    : workspace.type === "wanxiang"
+      ? `Base · v${workspace.version ?? "未知"}`
+      : "已连接"
+
   return (
     <HStack spacing={12}
-      onTapGesture={connected && workspace.type === "wanxiang" ? onPreview : undefined}
+      onTapGesture={canPreview ? onPreview : undefined}
       trailingSwipeActions={{
         actions: [
           <Button
@@ -78,18 +107,14 @@ function WorkspaceRow({
         ],
       }}
     >
-      <Image systemName="square.stack.3d.up.fill" foregroundColor="systemIndigo" />
-      <VStack alignment="leading" spacing={4}>
-        <Text font="headline">{workspace.name}</Text>
-        <Text font="caption" foregroundColor="secondary">
-          {workspace.type === "wanxiang" ? `Base · v${workspace.version ?? "未知"}` : "通用目录"}
-        </Text>
-        <Text font="caption2" foregroundColor="secondary" lineLimit={1}>{workspace.display_path}</Text>
+      <WorkspaceIcon systemName="folder.fill" color="systemIndigo" />
+      <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text>{workspace.name}</Text>
+        <Text font="caption" foregroundColor="secondary">{subtitle}</Text>
       </VStack>
-      <Spacer />
-      <Text font="caption" foregroundColor="secondary">
-        {connected ? (workspace.type === "wanxiang" ? "预览差异" : "已连接") : "需重新授权"}
-      </Text>
+      {canPreview
+        ? <Image systemName="chevron.right" foregroundColor="tertiaryLabel" imageScale="small" />
+        : <Text font="caption" foregroundColor="secondary">{connected ? "已连接" : "重新授权"}</Text>}
     </HStack>
   )
 }
@@ -340,7 +365,7 @@ export function LexiconScreen() {
         }}
       >
         {workspaces.length > 0 && (
-          <Section header={<Text>工作区</Text>} footer={<Text>点万象目录预览差异。提交写回万象，导入只进内部词库。</Text>}>
+          <Section header={<Text>工作区</Text>} footer={<Text>点按预览差异。提交写回万象，导入只进内部词库。</Text>}>
             {workspaces.map(workspace => (
               <WorkspaceRow
                 key={workspace.id}
