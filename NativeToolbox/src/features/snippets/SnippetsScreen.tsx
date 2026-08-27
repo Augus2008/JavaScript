@@ -29,6 +29,7 @@ import {
   looksLikeTemplate,
   renderSnippetTemplate,
 } from "./templates"
+import { loadPreferences } from "../../services/preferences"
 
 type Scope = "all" | "favorite"
 
@@ -155,11 +156,13 @@ function SnippetRow({
   categoryName,
   onEdit,
   reload,
+  onCopied,
 }: {
   snippet: Snippet
   categoryName: string
   onEdit: () => void
   reload: () => void
+  onCopied: () => void
 }) {
   const copy = async () => {
     const clipboard = extractTemplateKeys(snippet.body).includes("clipboard")
@@ -174,6 +177,7 @@ function SnippetRow({
       return
     }
     await Pasteboard.setString(rendered.text)
+    onCopied()
   }
 
   return (
@@ -241,6 +245,7 @@ export function SnippetsScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<Snippet | null>(null)
+  const [copiedToast, setCopiedToast] = useState(false)
 
   const reload = () => {
     Promise.all([
@@ -304,6 +309,13 @@ export function SnippetsScreen() {
         listStyle="insetGrouped"
         searchable={{ value: query, onChanged: setQuery, prompt: "搜索" }}
         overlay={overlay}
+        toast={{
+          isPresented: copiedToast,
+          onChanged: setCopiedToast,
+          message: "已复制",
+          duration: 1.2,
+          position: "bottom",
+        }}
         toolbar={{
           primaryAction: <Button title="新建" systemImage="plus" action={() => setEditor(emptySnippet(categoryFilter === "all" ? null : categoryFilter))} />,
           topBarTrailing: <Button title="从剪贴板" systemImage="doc.on.clipboard" action={createFromClipboard} />,
@@ -355,6 +367,9 @@ export function SnippetsScreen() {
               categoryName={categoryName(item.category_id)}
               onEdit={() => setEditor(item)}
               reload={reload}
+              onCopied={() => {
+                if (loadPreferences().copyFeedback) setCopiedToast(true)
+              }}
             />
           ))}
         </Section>}

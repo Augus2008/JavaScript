@@ -2,11 +2,12 @@ import { Tab, TabView, useObservable } from "scripting"
 import { SnippetsScreen } from "../features/snippets/SnippetsScreen"
 import { LexiconScreen } from "../features/lexicon/LexiconScreen"
 import { SettingsScreen } from "../features/settings/SettingsScreen"
+import { loadPreferences } from "../services/preferences"
 
 type TabID = "snippets" | "lexicon" | "settings"
 
 export function App() {
-  const selection = useObservable<TabID>("lexicon")
+  const selection = useObservable<TabID>(loadPreferences().startupTab)
 
   return (
     <TabView selection={selection}>

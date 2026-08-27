@@ -27,6 +27,7 @@ import {
 } from "../../services/database"
 import { chooseAndConnectWorkspace, refreshWorkspace } from "../../services/workspace-bookmarks"
 import { previewCustomPhraseDiff } from "../../services/wanxiang-preview"
+import { loadPreferences } from "../../services/preferences"
 import { PhraseDiffSheet } from "./PhraseDiffSheet"
 
 function emptyEntry(): LexiconEntry {
@@ -172,13 +173,16 @@ function LexiconRow({
   entry,
   onEdit,
   reload,
+  onCopied,
 }: {
   entry: LexiconEntry
   onEdit: () => void
   reload: () => void
+  onCopied: () => void
 }) {
   const copy = async () => {
     await Pasteboard.setString(entry.text)
+    onCopied()
   }
 
   const subtitle = [entry.code, entry.category, `权重 ${entry.weight}`]
@@ -235,6 +239,7 @@ export function LexiconScreen() {
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<LexiconEntry | null>(null)
   const [previewing, setPreviewing] = useState(false)
+  const [copiedToast, setCopiedToast] = useState(false)
 
   const reload = () => {
     Promise.all([
@@ -309,6 +314,13 @@ export function LexiconScreen() {
         navigationBarTitleDisplayMode="large"
         listStyle="insetGrouped"
         overlay={overlay}
+        toast={{
+          isPresented: copiedToast,
+          onChanged: setCopiedToast,
+          message: "已复制",
+          duration: 1.2,
+          position: "bottom",
+        }}
         toolbar={{
           topBarTrailing: <Button title="连接目录" systemImage="folder.badge.plus" action={connect} />,
         }}
@@ -365,6 +377,9 @@ export function LexiconScreen() {
                 entry={entry}
                 onEdit={() => setEditor(entry)}
                 reload={reload}
+                onCopied={() => {
+                  if (loadPreferences().copyFeedback) setCopiedToast(true)
+                }}
               />
             ))}
         </Section>
