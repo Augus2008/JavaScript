@@ -89,7 +89,7 @@ function DataRow({
   value: string
   width: number
   compact?: boolean
-  valueColor?: string
+  valueColor?: (typeof COLORS)[keyof typeof COLORS]
 }) {
   return (
     <HStack spacing={compact ? 5 : 6} alignment="center" frame={{ width }}>
