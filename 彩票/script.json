@@ -1,0 +1,43 @@
+{
+  "description" : null,
+  "runInApp" : false,
+  "remoteResource" : {
+    "autoUpdateInterval" : 600,
+    "hash" : "9bd22d603ad4ecf76a53b2c84dadcd3d",
+    "url" : "https:\/\/github.com\/ScriptingApp\/Community-Scripts\/raw\/refs\/heads\/main\/彩票.scripting"
+  },
+  "name" : "彩票",
+  "icon" : "square.2.layers.3d.fill",
+  "intentInputTypes" : [
+
+  ],
+  "contributors" : [
+
+  ],
+  "iconImage" : null,
+  "color" : "rgba(252, 124, 93,1)",
+  "version" : "1.1.2",
+  "localizedNames" : {
+    "it" : "",
+    "pt" : "",
+    "zh" : "",
+    "en" : "",
+    "ja" : "",
+    "de" : "",
+    "es" : "",
+    "ru" : "",
+    "fr" : ""
+  },
+  "author" : null,
+  "localizedDescriptions" : {
+    "it" : "",
+    "pt" : "",
+    "zh" : "",
+    "en" : "",
+    "ja" : "",
+    "de" : "",
+    "es" : "",
+    "ru" : "",
+    "fr" : ""
+  }
+}

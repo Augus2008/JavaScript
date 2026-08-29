@@ -1,0 +1,42 @@
+{
+  "entry" : "index.tsx",
+  "iconImage" : null,
+  "permissions" : null,
+  "remoteResource" : {
+    "autoUpdateInterval" : 3600,
+    "url" : "https:\/\/raw.githubusercontent.com\/hahaha001-1\/Scripting1\/main\/Weibo.zip",
+    "hash" : "f71d0ce4cb05ce54592ec35d7686cc3e"
+  },
+  "localizedNames" : {
+    "en" : "Weibo",
+    "zh" : "微博热搜"
+  },
+  "runInApp" : false,
+  "name" : "Weibo",
+  "icon" : "doc.text.magnifyingglass",
+  "intentInputTypes" : [
+
+  ],
+  "contributors" : [
+
+  ],
+  "author" : {
+    "name" : "Jackie",
+    "email" : "Honye@github.com",
+    "homepage" : "https:\/\/t.me\/iiMarkr"
+  },
+  "localizedDescriptions" : {
+    "de" : "",
+    "ja" : "",
+    "ru" : "",
+    "it" : "",
+    "pt" : "",
+    "es" : "",
+    "zh" : "",
+    "fr" : "",
+    "en" : ""
+  },
+  "version" : "1.1.7",
+  "color" : "rgba(238, 92, 98,1)",
+  "description" : null
+}

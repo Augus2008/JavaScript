@@ -1,0 +1,44 @@
+{
+  "localizedNames" : {
+    "en" : "",
+    "fr" : "",
+    "ru" : "",
+    "ja" : "",
+    "zh" : "",
+    "de" : "",
+    "es" : "",
+    "it" : "",
+    "pt" : ""
+  },
+  "intentInputTypes" : [
+
+  ],
+  "contributors" : [
+
+  ],
+  "remoteResource" : {
+    "url" : "https:\/\/joiner.i95.me\/scripting\/油价小组件.scripting",
+    "autoUpdateInterval" : 86400,
+    "hash" : "ca0fb751dfa75946ee58c5b39744aabb"
+  },
+  "version" : "1.1.6",
+  "entry" : "index.tsx",
+  "color" : "systemOrange",
+  "iconImage" : null,
+  "runInApp" : false,
+  "description" : "在桌面随时了解油价信息",
+  "localizedDescriptions" : {
+    "en" : "",
+    "fr" : "",
+    "ru" : "",
+    "ja" : "",
+    "zh" : "",
+    "de" : "",
+    "es" : "",
+    "it" : "",
+    "pt" : ""
+  },
+  "icon" : "fuelpump.fill",
+  "name" : "油价小组件",
+  "author" : null
+}
