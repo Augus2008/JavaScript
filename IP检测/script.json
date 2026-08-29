@@ -1,0 +1,44 @@
+{
+  "version" : "1.1.9",
+  "entry" : "index.tsx",
+  "contributors" : [
+
+  ],
+  "localizedNames" : {
+    "es" : "",
+    "ru" : "",
+    "ja" : "",
+    "de" : "",
+    "zh" : "",
+    "it" : "",
+    "fr" : "",
+    "en" : "",
+    "pt" : ""
+  },
+  "localizedDescriptions" : {
+    "es" : "",
+    "ru" : "",
+    "ja" : "",
+    "de" : "",
+    "zh" : "",
+    "it" : "",
+    "fr" : "",
+    "en" : "",
+    "pt" : ""
+  },
+  "description" : "智能IP检测工具，支持VPN\/代理状态、风险评分与城市级地图展示",
+  "author" : null,
+  "color" : "rgba(174, 109, 216, 1)",
+  "name" : "IP检测",
+  "remoteResource" : {
+    "url" : "https:\/\/github.com\/riccilnl\/my-scripting-widgets\/raw\/main\/IP检测.scripting",
+    "hash" : "d4e43dda08ae2dea1a1efe86346d9e6b",
+    "autoUpdateInterval" : 600
+  },
+  "icon" : "antenna.radiowaves.left.and.right",
+  "intentInputTypes" : [
+
+  ],
+  "iconImage" : null,
+  "runInApp" : false
+}
